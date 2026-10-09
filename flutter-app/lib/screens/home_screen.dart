@@ -9,6 +9,7 @@ class HomeScreen extends StatefulWidget {
     required this.patients,
     required this.schedules,
     required this.onCreateSchedule,
+    required this.onUpdateSchedule, // --- Đã thêm tham số này
     required this.onLogout,
   });
 
@@ -16,6 +17,7 @@ class HomeScreen extends StatefulWidget {
   final List<Patient> patients;
   final List<MedicationSchedule> schedules;
   final Future<void> Function(Map<String, dynamic>) onCreateSchedule;
+  final Future<void> Function(int, bool) onUpdateSchedule; // --- Đã thêm tham số này
   final VoidCallback onLogout;
 
   @override
@@ -191,7 +193,19 @@ class _HomeScreenState extends State<HomeScreen> {
         leading: CircleAvatar(backgroundColor: const Color(0xFFE6ECDB), child: Text('${schedule.slot}', style: const TextStyle(fontWeight: FontWeight.w700))),
         title: Text(schedule.medicationName, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text('${patient?.name ?? 'Hồ sơ'} · Ngăn ${schedule.slot} · ${schedule.active ? 'Đang bật' : 'Đang tắt'}'),
-        trailing: Text(schedule.time, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+        // --- Nút gạt Tạm dừng/Bật lại lịch được giữ nguyên ---
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(schedule.time, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(width: 8),
+            Switch(
+              value: schedule.active,
+              onChanged: (value) => widget.onUpdateSchedule(schedule.id, value),
+              activeColor: Theme.of(context).colorScheme.primary,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -211,6 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
+  // --- Giao diện tài khoản nguyên bản ---
   Widget _accountPage(BuildContext context) => ListView(padding: const EdgeInsets.all(20), children: [
         Card(child: ListTile(leading: const CircleAvatar(child: Icon(Icons.person)), title: Text(widget.account.displayName), subtitle: Text(widget.account.email))),
         const SizedBox(height: 8),

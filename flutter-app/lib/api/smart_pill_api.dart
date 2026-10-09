@@ -84,6 +84,12 @@ class SmartPillApi {
     });
   }
 
+  Future<void> updateSchedule(int id, {bool? active}) async {
+    await _request('/api/schedules/$id', method: 'PATCH', body: {
+      if (active != null) 'active': active,
+    });
+  }
+  
   void clearSession() => token = null;
 
   void close() => _client.close();
