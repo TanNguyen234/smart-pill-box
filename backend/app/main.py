@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import Base, make_engine, make_session_factory
 from app.models import DeviceEvent, MedicationSchedule, Patient, SimulationState, User
-from app.schemas import EventInput, LoginInput, PatientOutput, ScheduleCreate, SchedulePatch, UserOutput
+from app.schemas import EventInput, LoginInput, PatientOutput, ScheduleCreate, SchedulePatch, UserOutput, ClockAdvanceInput
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -207,6 +207,26 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 payload={"device_id": "SIM-001", "slot": payload.slot},
             )
         )
+        db.commit()
+        db.refresh(state)
+        return state_json(db, state)
+
+    @app.post("/api/simulation/clock/advance")
+    def advance_clock(payload: ClockAdvanceInput, user: User = Depends(operator_only), db: Session = Depends(get_db)):
+        state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+        if state is None:
+            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+        
+        try:
+            current_time = datetime.fromisoformat(state.virtual_clock)
+        except ValueError:
+            current_time = datetime.now(timezone.utc)
+            
+        new_time = current_time + timedelta(minutes=payload.minutes)
+        state.virtual_clock = new_time.isoformat()
+        state.updated_at = datetime.now(timezone.utc)
+        
+        # NOTE: Process milestones (MedicationSchedules) here later
         db.commit()
         db.refresh(state)
         return state_json(db, state)

@@ -134,6 +134,20 @@ function App() {
     }
   }
 
+  async function advanceClock(minutes: number) {
+    if (!token) return
+    setConnectionError('')
+    try {
+      const updated = await request<DeviceState>('/api/simulation/clock/advance', token, {
+        method: 'POST',
+        body: JSON.stringify({ minutes }),
+      })
+      setDevice(updated)
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Loi chinh dong ho')
+    }
+  }
+
   if (!token) {
     return (
       <main className="login-screen">
@@ -228,7 +242,10 @@ function App() {
           <aside className="disabled-panel">
             <div className="section-heading compact"><div><p className="eyebrow">GIAI ĐOẠN SAU</p><h2>Thao tác khác</h2></div><span className="lock-mark">Ⅱ</span></div>
             <div className="disabled-actions">
-              {['Lấy một viên', 'Xác nhận đã uống', '+1 phút', '+2 phút', '+5 phút', 'Đặt lại hộp'].map((action) => <button type="button" disabled key={action}><span>{action}</span><small>CHƯA TRIỂN KHAI</small></button>)}
+              <button type="button" onClick={() => advanceClock(1)}><span>+1 ph�t</span></button>
+              <button type="button" onClick={() => advanceClock(2)}><span>+2 ph�t</span></button>
+              <button type="button" onClick={() => advanceClock(5)}><span>+5 ph�t</span></button>
+              {['L?y m?t vi�n', 'X�c nh?n d� u?ng', '�?t l?i h?p'].map((action) => <button type="button" disabled key={action}><span>{action}</span><small>CHUA TRI?N KHAI</small></button>)}
             </div>
             <p className="safety-note">Mở nắp không xác nhận người dùng đã uống thuốc.</p>
           </aside>
@@ -240,3 +257,6 @@ function App() {
 }
 
 export default App
+
+
+
