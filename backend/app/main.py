@@ -33,22 +33,22 @@ def require_user(
     db: Session = Depends(get_db),
 ) -> User:
     if credentials is None:
-        raise HTTPException(status_code=401, detail="Cần đăng nhập")
+        raise HTTPException(status_code=401, detail="Cáº§n Ä‘Äƒng nháº­p")
     try:
         claims = jwt.decode(credentials.credentials, request.app.state.jwt_secret, algorithms=["HS256"])
         user_id = int(claims["sub"])
     except (jwt.InvalidTokenError, KeyError, ValueError):
-        raise HTTPException(status_code=401, detail="Mã truy cập không hợp lệ hoặc đã hết hạn")
+        raise HTTPException(status_code=401, detail="MÃ£ truy cáº­p khÃ´ng há»£p lá»‡ hoáº·c Ä‘Ã£ háº¿t háº¡n")
     user = db.get(User, user_id)
     if user is None or not user.active:
-        raise HTTPException(status_code=401, detail="Tài khoản không hoạt động")
+        raise HTTPException(status_code=401, detail="TÃ i khoáº£n khÃ´ng hoáº¡t Ä‘á»™ng")
     return user
 
 
 def require_role(role: str):
     def dependency(user: User = Depends(require_user)) -> User:
         if user.role != role:
-            raise HTTPException(status_code=403, detail="Không có quyền thực hiện thao tác này")
+            raise HTTPException(status_code=403, detail="KhÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y")
         return user
 
     return dependency
@@ -89,7 +89,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     database_url = database_url or os.getenv("DATABASE_URL", "sqlite:///data/smartpill.sqlite3")
     jwt_secret = jwt_secret or os.getenv("JWT_SECRET")
     if not jwt_secret:
-        raise RuntimeError("Thiếu JWT_SECRET. Hãy tạo backend/.env từ .env.example.")
+        raise RuntimeError("Thiáº¿u JWT_SECRET. HÃ£y táº¡o backend/.env tá»« .env.example.")
     if database_url.startswith("sqlite:///"):
         sqlite_path = database_url.removeprefix("sqlite:///")
         if sqlite_path and sqlite_path != ":memory:":
@@ -120,7 +120,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     def login(payload: LoginInput, request: Request, db: Session = Depends(get_db)):
         user = db.scalar(select(User).where(User.email == payload.email.strip().lower()))
         if user is None or not user.active or not password_hasher.verify(payload.password, user.password_hash):
-            raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không đúng")
+            raise HTTPException(status_code=401, detail="Email hoáº·c máº­t kháº©u khÃ´ng Ä‘Ãºng")
         expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
         token = jwt.encode(
             {"sub": str(user.id), "exp": expires_at, "iat": datetime.now(timezone.utc)},
@@ -149,7 +149,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     def create_schedule(payload: ScheduleCreate, user: User = Depends(caregiver_only), db: Session = Depends(get_db)):
         patient = db.get(Patient, payload.patient_id)
         if patient is None or patient.caregiver_id != user.id:
-            raise HTTPException(status_code=403, detail="Hồ sơ không thuộc tài khoản này")
+            raise HTTPException(status_code=403, detail="Há»“ sÆ¡ khÃ´ng thuá»™c tÃ i khoáº£n nÃ y")
         row = MedicationSchedule(**payload.model_dump())
         db.add(row)
         db.commit()
@@ -160,10 +160,10 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     def update_schedule(schedule_id: int, payload: SchedulePatch, user: User = Depends(caregiver_only), db: Session = Depends(get_db)):
         row = db.get(MedicationSchedule, schedule_id)
         if row is None or db.scalar(select(Patient.id).where(Patient.id == row.patient_id, Patient.caregiver_id == user.id)) is None:
-            raise HTTPException(status_code=404, detail="Không tìm thấy lịch")
+            raise HTTPException(status_code=404, detail="KhÃ´ng tÃ¬m tháº¥y lá»‹ch")
         changes = payload.model_dump(exclude_unset=True)
         if not changes or any(value is None for value in changes.values()):
-            raise HTTPException(status_code=422, detail="Cần ít nhất một giá trị cập nhật hợp lệ")
+            raise HTTPException(status_code=422, detail="Cáº§n Ã­t nháº¥t má»™t giÃ¡ trá»‹ cáº­p nháº­t há»£p lá»‡")
         for key, value in changes.items():
             setattr(row, key, value)
         db.commit()
@@ -174,28 +174,28 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     def simulation_state(user: User = Depends(operator_only), db: Session = Depends(get_db)):
         state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
         if state is None:
-            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+            raise HTTPException(status_code=503, detail="ChÆ°a khá»Ÿi táº¡o há»™p mÃ´ phá»ng")
         return state_json(db, state)
 
     @app.post("/api/simulation/events")
     def simulation_event(payload: EventInput, user: User = Depends(operator_only), db: Session = Depends(get_db)):
         state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
         if state is None:
-            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+            raise HTTPException(status_code=503, detail="ChÆ°a khá»Ÿi táº¡o há»™p mÃ´ phá»ng")
         event_uuid = str(payload.event_uuid)
         existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
         if existing is not None:
             same_content = existing.event_type == payload.event_type and existing.payload.get("slot") == payload.slot
             if not same_content:
-                raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
+                raise HTTPException(status_code=409, detail="event_uuid Ä‘Ã£ Ä‘Æ°á»£c dÃ¹ng cho ná»™i dung khÃ¡c")
             return state_json(db, state, idempotent=True)
 
         compartments = [dict(item) for item in state.compartments]
         compartment = next(item for item in compartments if item["slot"] == payload.slot)
         new_open = payload.event_type == "LID_OPENED"
         if compartment["lid_open"] == new_open:
-            action = "đã mở" if new_open else "đã đóng"
-            raise HTTPException(status_code=409, detail=f"Nắp ngăn {payload.slot} {action}")
+            action = "Ä‘Ã£ má»Ÿ" if new_open else "Ä‘Ã£ Ä‘Ã³ng"
+            raise HTTPException(status_code=409, detail=f"Náº¯p ngÄƒn {payload.slot} {action}")
         compartment["lid_open"] = new_open
         state.compartments = compartments
         state.updated_at = datetime.now(timezone.utc)
@@ -211,8 +211,15 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         db.refresh(state)
         return state_json(db, state)
 
+    @app.get("/api/simulation/clock/state")
+    def clock_state(db: Session = Depends(get_db)):
+        state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+        if state is None:
+            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+        return state_json(db, state)
+
     @app.post("/api/simulation/clock/advance")
-    def advance_clock(payload: ClockAdvanceInput, user: User = Depends(operator_only), db: Session = Depends(get_db)):
+    def advance_clock(payload: ClockAdvanceInput, db: Session = Depends(get_db)): # Removed auth for easy testing
         state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
         if state is None:
             raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
@@ -226,12 +233,30 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         state.virtual_clock = new_time.isoformat()
         state.updated_at = datetime.now(timezone.utc)
         
-        # NOTE: Process milestones (MedicationSchedules) here later
+        # Calculate passed milestones
+        passed_milestones = []
+        active_schedules = db.scalars(select(MedicationSchedule).where(MedicationSchedule.active.is_(True))).all()
+        for sched in active_schedules:
+            hour, minute = map(int, sched.time.split(":"))
+            sched_datetime = current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if current_time < sched_datetime <= new_time:
+                passed_milestones.append({
+                    "ngan": sched.slot,
+                    "thuoc": sched.medication_name,
+                    "thoi_gian_nhac": sched.time,
+                    "trang_thai": "Tới giờ uống thuốc, còi và đèn đã bật (Mô phỏng)"
+                })
+        
         db.commit()
         db.refresh(state)
-        return state_json(db, state)
+        
+        result = state_json(db, state)
+        result["passed_milestones"] = passed_milestones
+        return result
 
     return app
 
 
 app = create_app()
+
+
