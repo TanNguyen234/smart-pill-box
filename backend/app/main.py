@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import Base, make_engine, make_session_factory
-from app.models import DeviceEvent, MedicationSchedule, Patient, SimulationState, User
+from app.models import DeviceEvent, MedicationSchedule, Patient, SimulationState, User, DoseOccurrence
 from app.schemas import EventInput, LoginInput, PatientOutput, ScheduleCreate, SchedulePatch, UserOutput, ClockAdvanceInput
 
 
@@ -219,7 +219,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         return state_json(db, state)
 
     @app.post("/api/simulation/clock/advance")
-    def advance_clock(payload: ClockAdvanceInput, db: Session = Depends(get_db)): # Removed auth for easy testing
+    def advance_clock(payload: ClockAdvanceInput, db: Session = Depends(get_db)):
         state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
         if state is None:
             raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
@@ -233,13 +233,27 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         state.virtual_clock = new_time.isoformat()
         state.updated_at = datetime.now(timezone.utc)
         
-        # Calculate passed milestones
         passed_milestones = []
         active_schedules = db.scalars(select(MedicationSchedule).where(MedicationSchedule.active.is_(True))).all()
+        
+        compartments = [dict(c) for c in state.compartments]
+        
         for sched in active_schedules:
             hour, minute = map(int, sched.time.split(":"))
             sched_datetime = current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if current_time < sched_datetime <= new_time:
+                occurrence = DoseOccurrence(
+                    schedule_id=sched.id,
+                    scheduled_at=sched_datetime,
+                    status="pending"
+                )
+                db.add(occurrence)
+                
+                for comp in compartments:
+                    if comp["slot"] == sched.slot:
+                        comp["led"] = "Bật"
+                        comp["reminder"] = f"Đến giờ {sched.time}"
+                        
                 passed_milestones.append({
                     "ngan": sched.slot,
                     "thuoc": sched.medication_name,
@@ -247,6 +261,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                     "trang_thai": "Tới giờ uống thuốc, còi và đèn đã bật (Mô phỏng)"
                 })
         
+        state.compartments = compartments
         db.commit()
         db.refresh(state)
         
@@ -256,7 +271,4 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
 
     return app
 
-
 app = create_app()
-
-
