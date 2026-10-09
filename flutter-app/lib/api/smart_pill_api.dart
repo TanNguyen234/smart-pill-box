@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -84,7 +84,14 @@ class SmartPillApi {
     });
   }
 
+  Future<List<Alert>> getAlerts() async => (await _request('/api/alerts') as List<dynamic>).map((item) => Alert.fromJson(item as Map<String, dynamic>)).toList();
+
+  Future<void> resolveAlert(int alertId, {String? note}) async {
+    await _request('/api/alerts/$alertId/resolve', method: 'POST', body: note != null ? {'note': note} : {});
+  }
+
   void clearSession() => token = null;
 
   void close() => _client.close();
 }
+

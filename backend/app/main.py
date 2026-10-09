@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import Base, make_engine, make_session_factory
-from app.models import DeviceEvent, MedicationSchedule, Patient, SimulationState, User, DoseOccurrence
-from app.schemas import EventInput, LoginInput, PatientOutput, ScheduleCreate, SchedulePatch, UserOutput, ClockAdvanceInput
+from app.models import DeviceEvent, MedicationSchedule, Patient, SimulationState, User, DoseOccurrence, Alert
+from app.schemas import EventInput, LoginInput, PatientOutput, ScheduleCreate, SchedulePatch, UserOutput, ClockAdvanceInput, AlertOutput, AlertResolveInput
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -238,6 +238,74 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         
         compartments = [dict(c) for c in state.compartments]
         
+        # 1. Check for new scheduled occurrences
+        for sched in active_schedules:
+            hour, minute = map(int, sched.time.split(":"))
+            sched_datetime = current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if current_time < sched_datetime <= new_time:
+                occurrence = DoseOccurrence(
+                    schedule_id=sched.id,
+                    scheduled_at=sched_datetime,
+                    status="pending"
+                )
+                db.add(occurrence)
+                
+                for comp in compartments:
+                    if comp["slot"] == sched.slot:
+                        comp["led"] = "Bật"
+                        comp["reminder"] = f"Đến giờ {sched.time}"
+                        
+                passed_milestones.append({
+                    "ngan": sched.slot,
+                    "thuoc": sched.medication_name,
+                    "thoi_gian_nhac": sched.time,
+                    "trang_thai": "Tới giờ uống thuốc, còi và đèn đã bật (Mô phỏng)"
+                })
+
+        # 2. Check for overdue occurrences (Task 5)
+        db.flush()
+        pending_occurrences = db.scalars(select(DoseOccurrence).where(DoseOccurrence.status == "pending")).all()
+        
+        for occ in pending_occurrences:
+            delay = (new_time - occ.scheduled_at).total_seconds() / 60.0
+            
+            # Sau 2 phút chưa xác nhận -> Nhắc lại
+            if delay >= 2 and delay < 5:
+                sched = db.get(MedicationSchedule, occ.schedule_id)
+                for comp in compartments:
+                    if comp["slot"] == sched.slot:
+                        comp["reminder"] = f"NHẮC LẠI: Đã trễ {int(delay)} phút!"
+            
+            # Sau 5 phút chưa xác nhận -> Tạo cảnh báo 1 lần
+            if delay >= 5:
+                sched = db.get(MedicationSchedule, occ.schedule_id)
+                occ.status = "overdue_unconfirmed"
+                
+                existing_alert = db.scalar(select(Alert).where(Alert.occurrence_id == occ.id))
+                if not existing_alert:
+                    new_alert = Alert(
+                        patient_id=sched.patient_id,
+                        occurrence_id=occ.id,
+                        kind="QUA_HAN",
+                        message=f"Quá hạn 5 phút chưa uống {sched.medication_name} (Ngăn {sched.slot})"
+                    )
+                    db.add(new_alert)
+                    passed_milestones.append({
+                        "ngan": sched.slot,
+                        "thuoc": sched.medication_name,
+                        "thoi_gian_nhac": sched.time,
+                        "trang_thai": "Đã tạo cảnh báo quá hạn gửi đến người thân!"
+                    })
+                
+                for comp in compartments:
+                    if comp["slot"] == sched.slot:
+                        comp["led"] = "Tắt"
+                        comp["reminder"] = "Đã quá hạn (Chưa uống)"
+
+        state.compartments = compartments
+        
+        compartments = [dict(c) for c in state.compartments]
+        
         for sched in active_schedules:
             hour, minute = map(int, sched.time.split(":"))
             sched_datetime = current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -268,6 +336,26 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         result = state_json(db, state)
         result["passed_milestones"] = passed_milestones
         return result
+
+    @app.get("/api/alerts", response_model=list[AlertOutput])
+    def get_alerts(user: User = Depends(caregiver_only), db: Session = Depends(get_db)):
+        patient_ids = select(Patient.id).where(Patient.caregiver_id == user.id)
+        rows = db.scalars(select(Alert).where(Alert.patient_id.in_(patient_ids)).order_by(Alert.created_at.desc())).all()
+        return rows
+
+    @app.post("/api/alerts/{alert_id}/resolve", response_model=AlertOutput)
+    def resolve_alert(alert_id: int, payload: AlertResolveInput, user: User = Depends(caregiver_only), db: Session = Depends(get_db)):
+        alert = db.get(Alert, alert_id)
+        if not alert or db.scalar(select(Patient.id).where(Patient.id == alert.patient_id, Patient.caregiver_id == user.id)) is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy cảnh báo")
+        
+        alert.resolved_at = datetime.now(timezone.utc)
+        if payload.note:
+            alert.message += f" (Ghi chú: {payload.note})"
+            
+        db.commit()
+        db.refresh(alert)
+        return alert
 
     return app
 

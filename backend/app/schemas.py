@@ -38,14 +38,14 @@ class ScheduleCreate(BaseModel):
     def clean_medication_name(cls, value: str) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("Tên thuốc không được để trống")
+            raise ValueError("TÃƒÂªn thuÃ¡Â»â€˜c khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c Ã„â€˜Ã¡Â»Æ’ trÃ¡Â»â€˜ng")
         return value
 
     @field_validator("time")
     @classmethod
     def valid_time(cls, value: str) -> str:
         if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-            raise ValueError("Giờ phải theo định dạng HH:mm")
+            raise ValueError("GiÃ¡Â»Â phÃ¡ÂºÂ£i theo Ã„â€˜Ã¡Â»â€¹nh dÃ¡ÂºÂ¡ng HH:mm")
         return value
 
 
@@ -62,22 +62,41 @@ class SchedulePatch(BaseModel):
             return None
         value = value.strip()
         if not value:
-            raise ValueError("Tên thuốc không được để trống")
+            raise ValueError("TÃƒÂªn thuÃ¡Â»â€˜c khÃƒÂ´ng Ã„â€˜Ã†Â°Ã¡Â»Â£c Ã„â€˜Ã¡Â»Æ’ trÃ¡Â»â€˜ng")
         return value
 
     @field_validator("time")
     @classmethod
     def valid_time(cls, value: str | None) -> str | None:
         if value is not None and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-            raise ValueError("Giờ phải theo định dạng HH:mm")
+            raise ValueError("GiÃ¡Â»Â phÃ¡ÂºÂ£i theo Ã„â€˜Ã¡Â»â€¹nh dÃ¡ÂºÂ¡ng HH:mm")
         return value
 
 
 class EventInput(BaseModel):
     event_uuid: UUID
     slot: int = Field(ge=1, le=3)
-    event_type: Literal["LID_OPENED", "LID_CLOSED"]
+    event_type: Literal["LID_OPENED", "LID_CLOSED", "WEIGHT_CHANGED", "CONFIRMED"]
+    weight_grams: float | None = None
 
 class ClockAdvanceInput(BaseModel):
     minutes: int = Field(gt=0, le=1440)
+
+
+
+
+
+class AlertOutput(BaseModel):
+    id: int
+    patient_id: int
+    occurrence_id: int | None = None
+    kind: str
+    message: str
+    created_at: datetime
+    resolved_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class AlertResolveInput(BaseModel):
+    note: str | None = None
 

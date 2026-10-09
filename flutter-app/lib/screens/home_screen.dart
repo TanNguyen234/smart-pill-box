@@ -10,6 +10,8 @@ class HomeScreen extends StatefulWidget {
     required this.schedules,
     required this.onCreateSchedule,
     required this.onLogout,
+    required this.onFetchAlerts,
+    required this.onResolveAlert,
   });
 
   final Account account;
@@ -17,6 +19,8 @@ class HomeScreen extends StatefulWidget {
   final List<MedicationSchedule> schedules;
   final Future<void> Function(Map<String, dynamic>) onCreateSchedule;
   final VoidCallback onLogout;
+  final Future<List<Alert>> Function() onFetchAlerts;
+  final Future<void> Function(int, String?) onResolveAlert;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -24,6 +28,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _page = 0;
+  List<Alert> _alerts = [];
+  bool _isLoadingAlerts = false;
 
   Future<void> _showCreateSchedule() async {
     if (widget.patients.isEmpty) return;
@@ -129,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _todayPage(context),
         _schedulesPage(context),
         _comingSoon(context, Icons.history, 'Lịch sử', 'Danh sách lần uống sẽ xuất hiện khi engine lịch được triển khai.'),
-        _comingSoon(context, Icons.notifications_none, 'Cảnh báo', 'Cảnh báo sẽ được phát triển ở giai đoạn sau.'),
+        _alertsPage(context),
         _accountPage(context),
       ]),
       floatingActionButton: _page == 1
@@ -137,7 +143,10 @@ class _HomeScreenState extends State<HomeScreen> {
           : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _page,
-        onDestinationSelected: (index) => setState(() => _page = index),
+        onDestinationSelected: (index) {
+          setState(() => _page = index);
+          if (index == 3) _loadAlerts();
+        },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today), label: 'Hôm nay'),
           NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Lịch'),
@@ -220,4 +229,62 @@ class _HomeScreenState extends State<HomeScreen> {
       ]);
 
   Widget _emptyCard(BuildContext context, String message) => Card(child: Padding(padding: const EdgeInsets.all(18), child: Text(message, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))));
+
+  Future<void> _loadAlerts() async {
+    setState(() => _isLoadingAlerts = true);
+    try {
+      final alerts = await widget.onFetchAlerts();
+      if (mounted) setState(() => _alerts = alerts);
+    } finally {
+      if (mounted) setState(() => _isLoadingAlerts = false);
+    }
+  }
+
+  Future<void> _resolveAlert(Alert alert) async {
+    final noteController = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Xử lý cảnh báo'),
+        content: TextField(
+          controller: noteController,
+          decoration: const InputDecoration(hintText: 'Nhập ghi chú xử lý...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Huỷ')),
+          FilledButton(onPressed: () => Navigator.pop(c, noteController.text), child: const Text('Xác nhận')),
+        ],
+      ),
+    );
+    if (note != null) {
+      await widget.onResolveAlert(alert.id, note.isEmpty ? null : note);
+      await _loadAlerts();
+    }
+  }
+
+  Widget _alertsPage(BuildContext context) => _isLoadingAlerts
+      ? const Center(child: CircularProgressIndicator())
+      : ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text('Danh sách cảnh báo', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
+            if (_alerts.isEmpty) _emptyCard(context, 'Chưa có cảnh báo nào.') else ..._alerts.map((alert) {
+              final isResolved = alert.resolvedAt != null;
+              return Card(
+                color: isResolved ? null : const Color(0xFFFFEBEB),
+                child: ListTile(
+                  leading: Icon(Icons.warning, color: isResolved ? Colors.grey : Colors.red),
+                  title: Text(alert.message, style: TextStyle(color: isResolved ? Colors.grey : Colors.red.shade900, fontWeight: FontWeight.w600)),
+                  subtitle: Text('Loại: ${alert.kind} - Lần nhắc: ${alert.occurrenceId}\nThời gian: ${alert.createdAt}'),
+                  trailing: isResolved
+                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      : TextButton(onPressed: () => _resolveAlert(alert), child: const Text('XỬ LÝ')),
+                  isThreeLine: true,
+                ),
+              );
+            }),
+          ],
+        );
+
 }

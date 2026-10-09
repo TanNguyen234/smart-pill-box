@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 
 interface Milestone {
   ngan: number;
@@ -56,31 +56,31 @@ function DongHo() {
 
   return (
     <div style={{ fontFamily: 'sans-serif', maxWidth: 800, margin: '0 auto', padding: 20 }}>
-      <h1>Mô Phỏng Đồng Hồ Ảo (Thành viên 2)</h1>
+      <h1>MÃ´ Phá»ng Äá»“ng Há»“ áº¢o (ThÃ nh viÃªn 2)</h1>
       <div style={{ border: '1px solid #ccc', padding: 20, borderRadius: 8, backgroundColor: '#f9f9f9', marginBottom: 20 }}>
-        <h2>Bảng Điều Khiển Giờ</h2>
+        <h2>Báº£ng Äiá»u Khiá»ƒn Giá»</h2>
         {error && <p style={{ color: 'red' }}>{error}</p>}
         <p style={{ fontSize: '1.2em' }}>
-          Thời gian mô phỏng hiện tại: <strong>{virtualTime ? new Date(virtualTime).toLocaleString('vi-VN') : 'Đang tải...'}</strong>
+          Thá»i gian mÃ´ phá»ng hiá»‡n táº¡i: <strong>{virtualTime ? new Date(virtualTime).toLocaleString('vi-VN') : 'Äang táº£i...'}</strong>
         </p>
         
         <div style={{ marginTop: 20 }}>
-          <button style={{ marginRight: 10, padding: '10px 15px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => handleAdvance(1)}>+1 Phút</button>
-          <button style={{ marginRight: 10, padding: '10px 15px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => handleAdvance(2)}>+2 Phút</button>
-          <button style={{ marginRight: 10, padding: '10px 15px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => handleAdvance(5)}>+5 Phút</button>
+          <button style={{ marginRight: 10, padding: '10px 15px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => handleAdvance(1)}>+1 PhÃºt</button>
+          <button style={{ marginRight: 10, padding: '10px 15px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => handleAdvance(2)}>+2 PhÃºt</button>
+          <button style={{ marginRight: 10, padding: '10px 15px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => handleAdvance(5)}>+5 PhÃºt</button>
         </div>
       </div>
 
       <div style={{ border: '1px solid #ccc', padding: 20, borderRadius: 8, backgroundColor: '#f9f9f9' }}>
-        <h3>Lịch Sử Cảnh Báo / Các mốc vừa đi qua</h3>
+        <h3>Lá»‹ch Sá»­ Cáº£nh BÃ¡o / CÃ¡c má»‘c vá»«a Ä‘i qua</h3>
         {passedMilestones.length === 0 ? (
-          <p>Chưa đi qua mốc nào.</p>
+          <p>ChÆ°a Ä‘i qua má»‘c nÃ o.</p>
         ) : (
           <ul style={{ listStyleType: 'none', padding: 0 }}>
             {passedMilestones.map((ms, index) => (
               <li key={index} style={{ padding: 10, borderBottom: '1px solid #ddd' }}>
-                <strong>Ngăn {ms.ngan} ({ms.thuoc})</strong> - Mốc tới hạn: {ms.thoi_gian_nhac}
-                <br/><em style={{ color: '#d9534f' }}>Trạng thái: {ms.trang_thai}</em>
+                <strong>NgÄƒn {ms.ngan} ({ms.thuoc})</strong> - Má»‘c tá»›i háº¡n: {ms.thoi_gian_nhac}
+                <br/><em style={{ color: '#d9534f' }}>Tráº¡ng thÃ¡i: {ms.trang_thai}</em>
               </li>
             ))}
           </ul>
@@ -91,3 +91,4 @@ function DongHo() {
 }
 
 export default DongHo;
+

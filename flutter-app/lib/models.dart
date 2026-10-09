@@ -52,3 +52,25 @@ class MedicationSchedule {
         active: json['active'] as bool,
       );
 }
+
+class Alert {
+  const Alert({required this.id, required this.patientId, this.occurrenceId, required this.kind, required this.message, required this.createdAt, this.resolvedAt});
+  final int id;
+  final int patientId;
+  final int? occurrenceId;
+  final String kind;
+  final String message;
+  final String createdAt;
+  final String? resolvedAt;
+  
+  factory Alert.fromJson(Map<String, dynamic> json) => Alert(
+    id: json['id'] as int,
+    patientId: json['patient_id'] as int,
+    occurrenceId: json['occurrence_id'] as int?,
+    kind: json['kind'] as String,
+    message: json['message'] as String,
+    createdAt: json['created_at'] as String,
+    resolvedAt: json['resolved_at'] as String?,
+  );
+}
+
