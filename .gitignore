@@ -1,0 +1,32 @@
+# Secrets and local runtime data
+.env
+.env.*
+!.env.example
+**/.env
+backend/.venv/
+backend/data/*.sqlite3
+backend/data/*.sqlite3-*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+**/.ruff_cache/
+*.egg-info/
+
+# React / Vite
+web-simulator/node_modules/
+web-simulator/dist/
+web-simulator/.vite/
+
+# Flutter / Android local outputs
+flutter-app/.dart_tool/
+flutter-app/.flutter-plugins
+flutter-app/.flutter-plugins-dependencies
+flutter-app/.packages
+flutter-app/build/
+flutter-app/android/local.properties
+flutter-app/android/key.properties
+flutter-app/android/.gradle/
