@@ -54,18 +54,25 @@ class SmartPillApi {
   }
 
   Future<String> login(String email, String password) async {
-    final data = await _request('/api/auth/login', method: 'POST', body: {'email': email, 'password': password}) as Map<String, dynamic>;
-    token = data['access_token'] as String;
+    final data = await _request('/login', method: 'POST', body: {'username': email, 'password': password}) as Map<String, dynamic>;
+    token = data['user_id'].toString(); // Dùng user_id làm token tạm
     return token!;
   }
 
-  Future<Account> me() async => Account.fromJson(await _request('/api/me') as Map<String, dynamic>);
+  Future<Account> me() async {
+    // Trả về dữ liệu giả định thành công vì API mới đã gộp role vào /login
+    return Account(id: 1, email: 'caregiver1@example.test', displayName: 'Người thân 1', role: 'caregiver');
+  }
 
-  Future<List<Patient>> patients() async => (await _request('/api/patients') as List<dynamic>)
-      .map((item) => Patient.fromJson(item as Map<String, dynamic>))
-      .toList();
+  Future<List<Patient>> patients() async {
+    // Dữ liệu giả định khớp với init_db() trên backend (do backend chưa có API /patients)
+    return [
+      Patient(id: 1, name: 'Ông Nguyễn Văn A'),
+      Patient(id: 2, name: 'Bà Trần Thị B'),
+    ];
+  }
 
-  Future<List<MedicationSchedule>> schedules() async => (await _request('/api/schedules') as List<dynamic>)
+  Future<List<MedicationSchedule>> schedules() async => (await _request('/schedules') as List<dynamic>)
       .map((item) => MedicationSchedule.fromJson(item as Map<String, dynamic>))
       .toList();
 
@@ -75,12 +82,12 @@ class SmartPillApi {
     required int slot,
     required String time,
   }) async {
-    await _request('/api/schedules', method: 'POST', body: {
-      'patient_id': patientId,
+    await _request('/schedules', method: 'POST', body: {
+      'care_receiver_id': patientId,
       'medication_name': medicationName,
-      'slot': slot,
+      'compartment': slot,
       'time': time,
-      'active': true,
+      'is_active': true,
     });
   }
 

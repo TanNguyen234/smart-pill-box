@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
-
+import 'history_screen.dart';
+import 'alerts_screen.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -128,8 +129,8 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(index: _page, children: [
         _todayPage(context),
         _schedulesPage(context),
-        _comingSoon(context, Icons.history, 'Lịch sử', 'Danh sách lần uống sẽ xuất hiện khi engine lịch được triển khai.'),
-        _comingSoon(context, Icons.notifications_none, 'Cảnh báo', 'Cảnh báo sẽ được phát triển ở giai đoạn sau.'),
+        HistoryScreen(),
+        AlertsScreen(),
         _accountPage(context),
       ]),
       floatingActionButton: _page == 1

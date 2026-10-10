@@ -45,10 +45,10 @@ class MedicationSchedule {
 
   factory MedicationSchedule.fromJson(Map<String, dynamic> json) => MedicationSchedule(
         id: json['id'] as int,
-        patientId: json['patient_id'] as int,
+        patientId: json['care_receiver_id'] as int,
         medicationName: json['medication_name'] as String,
-        slot: json['slot'] as int,
+        slot: json['compartment'] as int,
         time: json['time'] as String,
-        active: json['active'] as bool,
+        active: json['is_active'] as bool,
       );
 }
