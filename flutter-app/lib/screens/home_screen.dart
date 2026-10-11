@@ -64,26 +64,34 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _fetchClock();
+  }
+
   String _formatClock(String raw) {
-    try {
-      final dt = DateTime.parse(raw);
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      final s = dt.second.toString().padLeft(2, '0');
-      return '$h:$m:$s';
-    } catch (_) {
-      if (raw.contains('T')) {
-        final timePart = raw.split('T')[1];
-        return timePart.length >= 8 ? timePart.substring(0, 8) : timePart;
+    if (raw.isEmpty) return '07:59:00';
+    if (raw.contains('T')) {
+      final timePart = raw.split('T')[1];
+      final cleanTime = timePart.split('+')[0].split('-')[0].split('Z')[0];
+      if (cleanTime.length >= 5) {
+        return cleanTime;
       }
-      return raw;
     }
+    return raw;
   }
 
   String _getRemindStatus() {
     try {
-      final dt = DateTime.parse(_virtualClock);
-      final currentMinutes = dt.hour * 60 + dt.minute;
+      int currentMinutes = 7 * 60 + 59;
+      if (_virtualClock.contains('T')) {
+        final timeStr = _virtualClock.split('T')[1].split('+')[0].split('-')[0].split('Z')[0];
+        final parts = timeStr.split(':');
+        if (parts.length >= 2) {
+          currentMinutes = int.parse(parts[0]) * 60 + int.parse(parts[1]);
+        }
+      }
       for (final s in widget.schedules) {
         if (!s.active) continue;
         final parts = s.time.split(':');
@@ -91,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final diff = currentMinutes - sMinutes;
         if (diff >= 0 && diff < 5) {
           return 'Đang đến giờ uống ${s.medicationName} (Ngăn ${s.slot})';
-        } else if (diff >= 5 && diff < 60) {
+        } else if (diff >= 5 && diff < 120) {
           return 'Đã qua giờ uống ${s.medicationName} lúc ${s.time}';
         }
       }
@@ -197,6 +205,16 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text('SMART PILL BOX', style: TextStyle(fontSize: 12, letterSpacing: 1.4, fontWeight: FontWeight.w700)),
           Text(titles[_page], style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant, fontWeight: FontWeight.normal)),
         ]),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Đồng bộ giờ',
+            onPressed: () async {
+              await _fetchClock();
+              if (_page == 3) await _loadAlerts();
+            },
+          ),
+        ],
         backgroundColor: const Color(0xFFF5F4EE),
       ),
       body: IndexedStack(index: _page, children: [
@@ -214,6 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (index) {
           setState(() => _page = index);
           if (index == 3) _loadAlerts();
+          _fetchClock();
         },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today), label: 'Hôm nay'),
@@ -228,7 +247,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _todayPage(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 28), children: [
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _fetchClock();
+        if (_page == 3) await _loadAlerts();
+      },
+      child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 28), children: [
       Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(color: colors.primary, borderRadius: BorderRadius.circular(22)),
@@ -248,7 +272,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (widget.schedules.isEmpty) _emptyCard(context, 'Chưa có lịch uống. Hãy thêm lịch mới để bắt đầu.') else ...widget.schedules.map((schedule) => _scheduleCard(context, schedule)),
       const SizedBox(height: 10),
       Text('Thông tin này lấy từ máy chủ demo. Chưa có xác nhận uống hoặc cảnh báo.', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12, height: 1.4)),
-    ]);
+    ]),
+  );
   }
 
   Widget _schedulesPage(BuildContext context) => ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 90), children: [

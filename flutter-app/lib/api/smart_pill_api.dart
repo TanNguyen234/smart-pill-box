@@ -6,10 +6,14 @@ import 'package:http/http.dart' as http;
 
 import '../models.dart';
 
-const apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:8000',
-);
+const String _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
+String get apiBaseUrl {
+  if (_configuredApiBaseUrl.isNotEmpty) return _configuredApiBaseUrl;
+  return (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+      ? 'http://localhost:8000'
+      : 'http://10.0.2.2:8000';
+}
 
 class ApiException implements Exception {
   const ApiException(this.message);
@@ -93,9 +97,9 @@ class SmartPillApi {
   Future<String> getVirtualClock() async {
     try {
       final data = await _request('/api/simulation/clock/state') as Map<String, dynamic>;
-      return (data['virtual_clock'] as String?) ?? '07:59:00';
+      return (data['virtual_clock'] as String?) ?? '';
     } catch (_) {
-      return '07:59:00';
+      return '';
     }
   }
 
