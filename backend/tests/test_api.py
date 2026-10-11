@@ -128,3 +128,66 @@ def test_operator_events_are_idempotent_persistent_and_validated(tmp_path):
         "device_events", "alerts", "simulation_state",
     }
     assert any(row["medication_name"] == "Thuốc D" for row in restarted_client.get("/api/schedules", headers=caregiver_a).json())
+
+
+def test_member2_virtual_clock_reminders_and_alerts(tmp_path):
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+    caregiver_a = login(client, "caregiver-a@example.test")
+
+    # Initial state is 07:59:00
+    state = client.get("/api/simulation/state", headers=operator).json()
+    assert state["virtual_clock"] == "2026-10-09T07:59:00+07:00"
+    assert state["compartments"][0]["led"] == "Tắt"
+
+    # +1 minute -> 08:00:00 (Crosses Thuốc A 08:00 milestone)
+    adv1 = client.post("/api/simulation/advance", json={"minutes": 1})
+    assert adv1.status_code == 200
+    data1 = adv1.json()
+    assert "08:00:00" in data1["virtual_clock"]
+    assert data1["compartments"][0]["led"] == "Bật"
+    assert data1["compartments"][0]["buzzer"] == "Bật"
+    assert len(data1["passed_milestones"]) == 1
+
+    # Doses should now show REMINDING
+    doses = client.get("/api/doses", headers=caregiver_a).json()
+    assert len(doses) == 1
+    assert doses[0]["status"] == "REMINDING"
+
+    # +2 minutes -> 08:02:00 (Nhắc lại sau 2 phút)
+    adv2 = client.post("/api/simulation/advance", json={"minutes": 2})
+    assert adv2.status_code == 200
+    data2 = adv2.json()
+    assert "NHẮC LẠI" in data2["compartments"][0]["reminder"]
+
+    # +3 minutes -> 08:05:00 (Quá hạn 5 phút -> Alert sinh ra)
+    adv3 = client.post("/api/simulation/advance", json={"minutes": 3})
+    assert adv3.status_code == 200
+    data3 = adv3.json()
+    assert data3["compartments"][0]["led"] == "Tắt"
+    assert "Đã quá hạn" in data3["compartments"][0]["reminder"]
+
+    # Check alert is created
+    alerts = client.get("/api/alerts", headers=caregiver_a).json()
+    assert len(alerts) == 1
+    assert alerts[0]["status"] == "PENDING"
+    assert "Quá hạn 5 phút" in alerts[0]["message"]
+
+    # Caregiver resolves alert
+    alert_id = alerts[0]["id"]
+    resolved = client.patch(f"/api/alerts/{alert_id}", headers=caregiver_a, json={"status": "CHECKED", "note": "Đã gọi điện"})
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "CHECKED"
+
+    # Reset demo
+    reset_resp = client.post("/api/simulation/reset", headers=operator, json={"confirmation": "RESET_DEMO"})
+    assert reset_resp.status_code == 200
+    reset_data = reset_resp.json()
+    assert reset_data["virtual_clock"] == "2026-10-09T07:59:00+07:00"
+    assert reset_data["compartments"][0]["led"] == "Tắt"
+    assert reset_data["compartments"][0]["reminder"] == "Chưa đến giờ"
+
+    # Alerts and doses cleaned up
+    assert len(client.get("/api/alerts", headers=caregiver_a).json()) == 0
+    assert len(client.get("/api/doses", headers=caregiver_a).json()) == 0
+

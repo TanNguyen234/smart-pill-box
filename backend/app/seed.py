@@ -70,11 +70,12 @@ def seed_demo(session_factory, demo_password: str) -> None:
             db.add(
                 SimulationState(
                     device_id="SIM-001",
+                    patient_id=patients["caregiver-a@example.test"].id,
                     virtual_clock="2026-10-09T07:59:00+07:00",
                     compartments=[
-                        {"slot": 1, "medication_name": "Thuốc A", "pill_count": 10, "weight_grams": 5.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ"},
-                        {"slot": 2, "medication_name": "Thuốc B", "pill_count": 8, "weight_grams": 4.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ"},
-                        {"slot": 3, "medication_name": "Thuốc C", "pill_count": 12, "weight_grams": 6.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ"},
+                        {"slot": 1, "medication_name": "Thuốc A", "pill_count": 10, "weight_grams": 5.0, "lid_open": False, "led": "Tắt", "buzzer": "Tắt", "reminder": "Chưa đến giờ"},
+                        {"slot": 2, "medication_name": "Thuốc B", "pill_count": 8, "weight_grams": 4.0, "lid_open": False, "led": "Tắt", "buzzer": "Tắt", "reminder": "Chưa đến giờ"},
+                        {"slot": 3, "medication_name": "Thuốc C", "pill_count": 12, "weight_grams": 6.0, "lid_open": False, "led": "Tắt", "buzzer": "Tắt", "reminder": "Chưa đến giờ"},
                     ],
                 )
             )
