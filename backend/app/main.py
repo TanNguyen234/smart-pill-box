@@ -391,12 +391,21 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
 
             # Sau 2 phút chưa xác nhận -> Nhắc lại lần 2
             if 2 <= delay < 5:
+                was_count = occ.reminder_count
                 occ.reminder_count = 2
                 for comp in compartments:
                     if comp["slot"] == sched.slot and comp.get("reminder") != "Đã xác nhận uống":
                         comp["reminder"] = f"NHẮC LẠI: Đã trễ {int(delay)} phút!"
                         comp["led"] = "Bật"
                         comp["buzzer"] = "Bật"
+
+                if was_count < 2:
+                    passed_milestones.append({
+                        "ngan": sched.slot,
+                        "thuoc": sched.medication_name,
+                        "thoi_gian_nhac": f"{sched.time} (+{int(delay)} phút)",
+                        "trang_thai": f"Nhắc lại lần 2: Đã trễ {int(delay)} phút chưa xác nhận uống!",
+                    })
 
             # Sau 5 phút chưa xác nhận -> Quá hạn, tắt đèn/còi, tạo Alert
             if delay >= 5:
