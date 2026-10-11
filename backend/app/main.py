@@ -445,7 +445,11 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         return _advance_logic(payload, db)
 
     @app.post("/api/simulation/reset")
-    def simulation_reset(payload: SimulationResetInput, user: User = Depends(operator_only), db: Session = Depends(get_db)):
+    def simulation_reset(
+        payload: SimulationResetInput,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+        db: Session = Depends(get_db),
+    ):
         if payload.confirmation != "RESET_DEMO":
             raise HTTPException(status_code=400, detail="Cần xác nhận 'RESET_DEMO'")
 
