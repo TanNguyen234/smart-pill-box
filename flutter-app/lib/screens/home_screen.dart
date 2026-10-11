@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -12,6 +14,7 @@ class HomeScreen extends StatefulWidget {
     required this.onLogout,
     required this.onFetchAlerts,
     required this.onResolveAlert,
+    this.onFetchVirtualClock,
   });
 
   final Account account;
@@ -21,6 +24,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback onLogout;
   final Future<List<Alert>> Function() onFetchAlerts;
   final Future<void> Function(int, String?) onResolveAlert;
+  final Future<String> Function()? onFetchVirtualClock;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -30,6 +34,70 @@ class _HomeScreenState extends State<HomeScreen> {
   int _page = 0;
   List<Alert> _alerts = [];
   bool _isLoadingAlerts = false;
+  Timer? _clockTimer;
+  String _virtualClock = '07:59:00';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchClock();
+    _clockTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _fetchClock();
+      if (_page == 3) {
+        _loadAlerts();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchClock() async {
+    if (widget.onFetchVirtualClock != null) {
+      final clock = await widget.onFetchVirtualClock!();
+      if (mounted && clock.isNotEmpty) {
+        setState(() => _virtualClock = clock);
+      }
+    }
+  }
+
+  String _formatClock(String raw) {
+    try {
+      final dt = DateTime.parse(raw);
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      final s = dt.second.toString().padLeft(2, '0');
+      return '$h:$m:$s';
+    } catch (_) {
+      if (raw.contains('T')) {
+        final timePart = raw.split('T')[1];
+        return timePart.length >= 8 ? timePart.substring(0, 8) : timePart;
+      }
+      return raw;
+    }
+  }
+
+  String _getRemindStatus() {
+    try {
+      final dt = DateTime.parse(_virtualClock);
+      final currentMinutes = dt.hour * 60 + dt.minute;
+      for (final s in widget.schedules) {
+        if (!s.active) continue;
+        final parts = s.time.split(':');
+        final sMinutes = int.parse(parts[0]) * 60 + int.parse(parts[1]);
+        final diff = currentMinutes - sMinutes;
+        if (diff >= 0 && diff < 5) {
+          return 'Đang đến giờ uống ${s.medicationName} (Ngăn ${s.slot})';
+        } else if (diff >= 5 && diff < 60) {
+          return 'Đã qua giờ uống ${s.medicationName} lúc ${s.time}';
+        }
+      }
+    } catch (_) {}
+    return 'Chưa đến giờ uống theo lịch.';
+  }
 
   Future<void> _showCreateSchedule() async {
     if (widget.patients.isEmpty) return;
@@ -169,9 +237,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 10),
           Text(widget.patients.isEmpty ? 'Chưa có hồ sơ' : widget.patients.first.name, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          const Text('Giờ demo: 07:59 · GMT+7', style: TextStyle(color: Colors.white70)),
+          Text('Giờ demo: ${_formatClock(_virtualClock)} · GMT+7', style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 16),
-          const Row(children: [Icon(Icons.info_outline, color: Color(0xFFD9E9A8), size: 17), SizedBox(width: 8), Expanded(child: Text('Chưa đến giờ uống theo lịch.', style: TextStyle(color: Colors.white, fontSize: 13)))]),
+          Row(children: [const Icon(Icons.info_outline, color: Color(0xFFD9E9A8), size: 17), const SizedBox(width: 8), Expanded(child: Text(_getRemindStatus(), style: const TextStyle(color: Colors.white, fontSize: 13)))]),
         ]),
       ),
       const SizedBox(height: 23),

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -88,6 +88,15 @@ class SmartPillApi {
 
   Future<void> resolveAlert(int alertId, {String? note}) async {
     await _request('/api/alerts/$alertId/resolve', method: 'POST', body: note != null ? {'note': note} : {});
+  }
+
+  Future<String> getVirtualClock() async {
+    try {
+      final data = await _request('/api/simulation/clock/state') as Map<String, dynamic>;
+      return (data['virtual_clock'] as String?) ?? '07:59:00';
+    } catch (_) {
+      return '07:59:00';
+    }
   }
 
   void clearSession() => token = null;

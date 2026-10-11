@@ -88,6 +88,7 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                 onLogout: _logout,
                 onFetchAlerts: () => _api.getAlerts(),
                 onResolveAlert: (id, note) => _api.resolveAlert(id, note: note),
+                onFetchVirtualClock: () => _api.getVirtualClock(),
               ),
       );
 }
