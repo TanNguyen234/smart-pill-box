@@ -42,11 +42,6 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
     if (mounted) setState(() => _schedules = schedules);
   }
 
-  Future<void> _updateSchedule(int id, bool active) async {
-    await _api.updateSchedule(id, active: active);
-    await _refreshSchedules();
-  }
-
   void _logout() => setState(() {
         _api.clearSession();
         _account = null;
@@ -90,7 +85,16 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                   );
                   await _refreshSchedules();
                 },
-                onUpdateSchedule: _updateSchedule,
+                onUpdateSchedule: (scheduleId, values) async {
+                  await _api.updateSchedule(
+                    scheduleId,
+                    medicationName: values['medication_name'] as String?,
+                    slot: values['slot'] as int?,
+                    time: values['time'] as String?,
+                    active: values['active'] as bool?,
+                  );
+                  await _refreshSchedules();
+                },
                 onLogout: _logout,
               ),
       );

@@ -51,4 +51,21 @@ class MedicationSchedule {
         time: json['time'] as String,
         active: json['active'] as bool,
       );
+
+  MedicationSchedule copyWith({
+    int? id,
+    int? patientId,
+    String? medicationName,
+    int? slot,
+    String? time,
+    bool? active,
+  }) =>
+      MedicationSchedule(
+        id: id ?? this.id,
+        patientId: patientId ?? this.patientId,
+        medicationName: medicationName ?? this.medicationName,
+        slot: slot ?? this.slot,
+        time: time ?? this.time,
+        active: active ?? this.active,
+      );
 }

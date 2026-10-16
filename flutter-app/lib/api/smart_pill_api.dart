@@ -84,12 +84,27 @@ class SmartPillApi {
     });
   }
 
-  Future<void> updateSchedule(int id, {bool? active}) async {
-    await _request('/api/schedules/$id', method: 'PATCH', body: {
-      if (active != null) 'active': active,
-    });
+  Future<MedicationSchedule> updateSchedule(
+    int scheduleId, {
+    String? medicationName,
+    int? slot,
+    String? time,
+    bool? active,
+  }) async {
+    final body = <String, dynamic>{};
+    if (medicationName != null) body['medication_name'] = medicationName;
+    if (slot != null) body['slot'] = slot;
+    if (time != null) body['time'] = time;
+    if (active != null) body['active'] = active;
+
+    final data = await _request(
+      '/api/schedules/$scheduleId',
+      method: 'PATCH',
+      body: body,
+    ) as Map<String, dynamic>;
+    return MedicationSchedule.fromJson(data);
   }
-  
+
   void clearSession() => token = null;
 
   void close() => _client.close();
