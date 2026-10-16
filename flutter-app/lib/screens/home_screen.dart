@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../api/smart_pill_api.dart';
 import '../models.dart';
+import 'alerts_screen.dart';
+import 'history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
+    this.api,
     required this.account,
     required this.patients,
     required this.schedules,
@@ -12,6 +16,7 @@ class HomeScreen extends StatefulWidget {
     required this.onLogout,
   });
 
+  final SmartPillApi? api;
   final Account account;
   final List<Patient> patients;
   final List<MedicationSchedule> schedules;
@@ -128,8 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(index: _page, children: [
         _todayPage(context),
         _schedulesPage(context),
-        _comingSoon(context, Icons.history, 'Lịch sử', 'Danh sách lần uống sẽ xuất hiện khi engine lịch được triển khai.'),
-        _comingSoon(context, Icons.notifications_none, 'Cảnh báo', 'Cảnh báo sẽ được phát triển ở giai đoạn sau.'),
+        HistoryScreen(api: widget.api),
+        AlertsScreen(api: widget.api),
         _accountPage(context),
       ]),
       floatingActionButton: _page == 1
@@ -195,21 +200,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  Widget _comingSoon(BuildContext context, IconData icon, String title, String description) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(36),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 44, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(description, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5)),
-            const SizedBox(height: 14),
-            const Chip(label: Text('Sẽ phát triển ở giai đoạn sau')),
-          ]),
-        ),
-      );
 
   Widget _accountPage(BuildContext context) => ListView(padding: const EdgeInsets.all(20), children: [
         Card(child: ListTile(leading: const CircleAvatar(child: Icon(Icons.person)), title: Text(widget.account.displayName), subtitle: Text(widget.account.email))),
