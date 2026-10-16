@@ -1,22 +1,62 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 
 type User = { email: string; display_name: string; role: string }
 type Compartment = {
   slot: number
+  compartment_id?: number
   medication_name: string
   pill_count: number
   weight_grams: number
   lid_open: boolean
   led: string
+  buzzer_on: boolean
   reminder: string
+  current_occurrence_id: number | null
+  can_confirm: boolean
 }
-type Schedule = { medication_name: string; slot: number; time: string }
+type Schedule = { id: number; medication_name: string; slot: number; time: string }
+type SimulationEvent = {
+  id: number
+  event_uuid: string
+  event_type: string
+  payload: Record<string, string | number | boolean | null>
+  created_at: string
+}
+type Occurrence = {
+  id: number
+  schedule_id: number
+  medication_name: string
+  slot: number
+  scheduled_at: string
+  confirmed_at: string | null
+  status: string
+}
 type DeviceState = {
   device_id: string
   virtual_clock: string
+  next_milestone_minutes?: number
   compartments: Compartment[]
   active_schedules: Schedule[]
+  active_occurrences: Occurrence[]
+  recent_occurrences: Occurrence[]
+  recent_events: SimulationEvent[]
+}
+type EventType =
+  | 'LID_OPENED'
+  | 'LID_CLOSED'
+  | 'WEIGHT_READING'
+  | 'CONFIRM_PRESSED'
+  | 'PILL_DISPENSED'
+  | 'DOSE_CONFIRMED'
+
+class ApiRequestError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
 }
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
@@ -32,7 +72,7 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(typeof body.detail === 'string' ? body.detail : `Yêu cầu lỗi (${response.status})`)
+    throw new ApiRequestError(typeof body.detail === 'string' ? body.detail : `Yêu cầu lỗi (${response.status})`, response.status)
   }
   return body as T
 }
@@ -47,6 +87,29 @@ function clockLabel(value: string) {
   }).format(new Date(value))
 }
 
+function dateLabel(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'long' }).format(new Date(value))
+}
+
+function nextScheduleFor(device: DeviceState): Schedule | undefined {
+  if (device.active_schedules.length === 0) return undefined
+  const now = new Date(device.virtual_clock).getTime()
+  const dateParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(device.virtual_clock))
+  const date = `${dateParts.find((part) => part.type === 'year')?.value}-${dateParts.find((part) => part.type === 'month')?.value}-${dateParts.find((part) => part.type === 'day')?.value}`
+  return [...device.active_schedules]
+    .map((schedule) => {
+      let timestamp = Date.parse(`${date}T${schedule.time}:00+07:00`)
+      if (timestamp <= now) timestamp += 24 * 60 * 60 * 1000
+      return { schedule, timestamp }
+    })
+    .sort((left, right) => left.timestamp - right.timestamp)[0]?.schedule
+}
+
 function PillBoxMark() {
   return (
     <svg viewBox="0 0 38 38" aria-hidden="true">
@@ -57,6 +120,24 @@ function PillBoxMark() {
   )
 }
 
+function eventLabel(event: SimulationEvent) {
+  if (event.event_type === 'REMINDER_SENT') return Number(event.payload.reminder_level) === 2 ? 'Nhắc lại lần hai' : 'Bắt đầu nhắc thuốc'
+  if (event.event_type === 'ALERT_CREATED') return 'Đã tạo cảnh báo quá hạn'
+  if (event.event_type === 'CLOCK_ADVANCED') return `Tiến đồng hồ +${event.payload.minutes} phút`
+  if (event.event_type === 'SIMULATION_RESET') return 'Đặt lại hộp mô phỏng'
+  if (event.event_type === 'WEIGHT_READING') {
+    const weight = event.payload.weight_g
+    return typeof weight === 'number' ? `Cảm biến cân: ${weight.toFixed(1)} g` : 'Cảm biến tải trọng đọc khối lượng'
+  }
+  if (event.event_type === 'CONFIRM_PRESSED') return 'Nút hộp: Bấm xác nhận uống thuốc'
+  return {
+    LID_OPENED: 'Mở nắp ngăn',
+    LID_CLOSED: 'Đóng nắp ngăn',
+    PILL_DISPENSED: 'Lấy một viên mô phỏng',
+    DOSE_CONFIRMED: 'Người dùng xác nhận đã uống',
+  }[event.event_type] ?? event.event_type
+}
+
 function App() {
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -64,9 +145,34 @@ function App() {
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [connectionError, setConnectionError] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
   const [device, setDevice] = useState<DeviceState | null>(null)
-  const [loading, setLoading] = useState(false)
   const [busySlot, setBusySlot] = useState<number | null>(null)
+  const [busyControl, setBusyControl] = useState(false)
+  const [audioEnabled, setAudioEnabled] = useState(false)
+  const audioContext = useRef<AudioContext | null>(null)
+  const lastReminderEventId = useRef<number | null>(null)
+  const recentEvents = device?.recent_events
+
+  function playReminderTone() {
+    try {
+      const context = audioContext.current ?? new window.AudioContext()
+      audioContext.current = context
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.type = 'sine'
+      oscillator.frequency.value = 880
+      gain.gain.setValueAtTime(0.0001, context.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.13, context.currentTime + 0.025)
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.35)
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.36)
+    } catch {
+      // Audio is an optional browser feature; the visual alarm remains authoritative.
+    }
+  }
 
   useEffect(() => {
     if (!token) return
@@ -79,12 +185,11 @@ function App() {
           setConnectionError('')
         }
       } catch (error) {
-        if (alive) setConnectionError(error instanceof Error ? error.message : 'Không kết nối được backend')
-      } finally {
-        if (alive) setLoading(false)
+        if (alive) {
+          setConnectionError(error instanceof Error ? error.message : 'Không kết nối được backend')
+        }
       }
     }
-    setLoading(true)
     void refresh()
     const timer = window.setInterval(() => void refresh(), 2000)
     return () => {
@@ -92,6 +197,32 @@ function App() {
       window.clearInterval(timer)
     }
   }, [token])
+
+  useEffect(() => {
+    if (!recentEvents) return
+    const reminderEvents = recentEvents.filter((event) => event.event_type === 'REMINDER_SENT')
+    const newestId = reminderEvents.reduce((latest, event) => Math.max(latest, event.id), 0)
+    const previousId = lastReminderEventId.current
+    if (previousId === null || newestId < previousId) {
+      lastReminderEventId.current = newestId
+      return
+    }
+    if (newestId > previousId) {
+      lastReminderEventId.current = newestId
+      if (audioEnabled) playReminderTone()
+    }
+  }, [recentEvents, audioEnabled])
+
+  async function toggleAudio() {
+    try {
+      if (!audioContext.current) audioContext.current = new window.AudioContext()
+      await audioContext.current.resume()
+      setAudioEnabled((enabled) => !enabled)
+      setActionMessage('')
+    } catch {
+      setActionMessage('Trình duyệt không cho phép bật âm thanh. Đèn và chữ nhắc vẫn hoạt động.')
+    }
+  }
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -107,30 +238,103 @@ function App() {
       }
       setUser(result.user)
       setToken(result.access_token)
+      lastReminderEventId.current = null
       setPassword('')
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Đăng nhập thất bại')
     }
   }
 
-  async function toggleLid(slot: number, open: boolean) {
+  function logout() {
+    setToken(null)
+    setUser(null)
+    setDevice(null)
+    setConnectionError('')
+    setActionMessage('')
+    setAudioEnabled(false)
+    lastReminderEventId.current = null
+  }
+
+  async function sendEvent(slot: number, eventType: EventType, extraPayload: Record<string, unknown> = {}) {
     if (!token) return
     setBusySlot(slot)
-    setConnectionError('')
+    setActionMessage('')
     try {
       const updated = await request<DeviceState>('/api/simulation/events', token, {
         method: 'POST',
         body: JSON.stringify({
           event_uuid: crypto.randomUUID(),
           slot,
-          event_type: open ? 'LID_OPENED' : 'LID_CLOSED',
+          compartment_id: slot,
+          event_type: eventType,
+          payload: extraPayload,
+          ...extraPayload,
         }),
       })
       setDevice(updated)
+      setConnectionError('')
     } catch (error) {
-      setConnectionError(error instanceof Error ? error.message : 'Không lưu được thao tác')
+      if (error instanceof ApiRequestError) setActionMessage(error.message)
+      else setConnectionError(error instanceof Error ? error.message : 'Không lưu được thao tác')
     } finally {
       setBusySlot(null)
+    }
+  }
+
+  async function takeOnePill(item: Compartment) {
+    const nextWeight = Math.max(0, Number((item.weight_grams - 0.5).toFixed(1)))
+    await sendEvent(item.slot, 'WEIGHT_READING', { weight_g: nextWeight })
+  }
+
+  async function injectNoise(item: Compartment) {
+    const nextWeight = Math.max(0, Number((item.weight_grams - 0.1).toFixed(1)))
+    await sendEvent(item.slot, 'WEIGHT_READING', { weight_g: nextWeight })
+  }
+
+  async function confirmDose(item: Compartment) {
+    await sendEvent(
+      item.slot,
+      'CONFIRM_PRESSED',
+      item.current_occurrence_id ? { occurrence_id: item.current_occurrence_id } : {}
+    )
+  }
+
+  async function advanceClock(minutes: number) {
+    if (!token) return
+    setBusyControl(true)
+    setActionMessage('')
+    try {
+      const updated = await request<DeviceState>('/api/simulation/advance', token, {
+        method: 'POST',
+        body: JSON.stringify({ event_uuid: crypto.randomUUID(), minutes }),
+      })
+      setDevice(updated)
+      setConnectionError('')
+    } catch (error) {
+      if (error instanceof ApiRequestError) setActionMessage(error.message)
+      else setConnectionError(error instanceof Error ? error.message : 'Không thể tiến đồng hồ mô phỏng')
+    } finally {
+      setBusyControl(false)
+    }
+  }
+
+  async function resetSimulation() {
+    if (!token || !window.confirm('Đặt lại hộp sẽ xóa lịch sử thao tác, lần nhắc và cảnh báo của phiên demo hiện tại. Các tài khoản và lịch thuốc vẫn được giữ; nhật ký sẽ ghi thao tác đặt lại. Tiếp tục?')) return
+    setBusyControl(true)
+    setActionMessage('')
+    try {
+      const updated = await request<DeviceState>('/api/simulation/reset', token, {
+        method: 'POST',
+        body: JSON.stringify({ confirm: true, event_uuid: crypto.randomUUID() }),
+      })
+      setDevice(updated)
+      lastReminderEventId.current = 0
+      setConnectionError('')
+    } catch (error) {
+      if (error instanceof ApiRequestError) setActionMessage(error.message)
+      else setConnectionError(error instanceof Error ? error.message : 'Không thể đặt lại mô phỏng')
+    } finally {
+      setBusyControl(false)
     }
   }
 
@@ -148,7 +352,7 @@ function App() {
           <div className="login-copy">
             <p className="eyebrow">BÀN ĐIỀU KHIỂN THIẾT BỊ</p>
             <h1>Một chiếc hộp.<br /><em>Ba ngăn thuốc.</em></h1>
-            <p className="muted">Đăng nhập bằng tài khoản điều khiển để xem trạng thái và thao tác nắp hộp mô phỏng.</p>
+            <p className="muted">Đăng nhập operator để thao tác hộp mô phỏng, chạy đồng hồ và xem dữ liệu đã lưu trên máy chủ.</p>
           </div>
           <form className="login-form" onSubmit={login}>
             <label htmlFor="email">Email điều khiển</label>
@@ -164,7 +368,9 @@ function App() {
     )
   }
 
-  const nextSchedule = device?.active_schedules[0]
+  const nextSchedule = device ? nextScheduleFor(device) : undefined
+  const events = device?.recent_events ?? []
+  const loading = Boolean(token && !device && !connectionError)
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -174,8 +380,9 @@ function App() {
         </a>
         <div className="topbar-right">
           <div className={`connection ${connectionError ? 'is-offline' : ''}`}><span className="status-dot" />{connectionError ? 'Mất kết nối' : 'Backend trực tuyến'}</div>
+          <button className={`audio-toggle ${audioEnabled ? 'audio-on' : ''}`} type="button" onClick={() => void toggleAudio()} aria-pressed={audioEnabled}>{audioEnabled ? '♫ Còi đang bật' : '♫ Bật âm thanh'}</button>
           <span className="user-chip">{user?.display_name ?? 'Operator'}</span>
-          <button className="text-button" type="button" onClick={() => { setToken(null); setUser(null); setDevice(null) }}>Đăng xuất</button>
+          <button className="text-button" type="button" onClick={logout}>Đăng xuất</button>
         </div>
       </header>
 
@@ -183,34 +390,59 @@ function App() {
         <section className="intro-row">
           <div>
             <p className="eyebrow">MÔ PHỎNG THIẾT BỊ <span>·</span> {device?.device_id ?? 'SIM—001'}</p>
-            <h1>Chào buổi sáng<span className="heading-period">.</span></h1>
-            <p className="muted">Theo dõi trạng thái hộp thuốc và lịch đã lưu trên backend.</p>
+            <h1>Bàn điều khiển<span className="heading-period">.</span></h1>
+            <p className="muted">Một hộp ảo, ba ngăn thật dữ liệu. Mỗi thao tác được máy chủ xác nhận trước khi giao diện cập nhật.</p>
           </div>
           <div className="clock-card">
             <span className="clock-label">GIỜ MÔ PHỎNG · GMT+7</span>
             <strong>{device ? clockLabel(device.virtual_clock) : '— — : — —'}</strong>
-            <span className="clock-date">{device ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'long' }).format(new Date(device.virtual_clock)) : 'Đang tải trạng thái'}</span>
+            <span className="clock-date">{device ? dateLabel(device.virtual_clock) : 'Đang tải trạng thái'}</span>
           </div>
         </section>
 
         {connectionError && <div className="alert-banner" role="status"><span>!</span><div><strong>Không thể đồng bộ với backend</strong><small>{connectionError} · Đang thử kết nối lại mỗi 2 giây.</small></div></div>}
+        {actionMessage && <div className="action-banner" role="alert"><span>!</span><div><strong>Thao tác chưa hoàn tất</strong><small>{actionMessage}</small></div><button type="button" onClick={() => setActionMessage('')} aria-label="Đóng thông báo">×</button></div>}
         {loading && !device && <div className="loading-card"><span className="loader" />Đang tải trạng thái từ SQLite…</div>}
 
+        <section className="simulation-console" aria-label="Điều khiển đồng hồ mô phỏng">
+          <div className="console-copy"><span className="console-icon">◷</span><div><p className="eyebrow">ĐIỀU KHIỂN THỜI GIAN</p><strong>Tiến đồng hồ ảo</strong><small>Chạy qua mốc nhắc mà không đổi giờ máy tính.</small></div></div>
+          <div className="clock-buttons">
+            {[1, 2, 5].map((minutes) => <button type="button" key={minutes} disabled={!device || busyControl} onClick={() => void advanceClock(minutes)}>{busyControl ? 'Đang chạy…' : `+${minutes} phút`}</button>)}
+            <button className="milestone-button" type="button" disabled={!device || busyControl} onClick={() => void advanceClock(device?.next_milestone_minutes ?? 1)} title="Nhảy đến mốc nhắc thuốc hoặc quá hạn gần nhất">Mốc tiếp theo (+{device?.next_milestone_minutes ?? 1}p)</button>
+            <button className="reset-button" type="button" disabled={!device || busyControl} onClick={() => void resetSimulation()}>Đặt lại hộp</button>
+          </div>
+        </section>
+
         <section className="overview-row">
-          <div className="section-heading"><div><p className="eyebrow">TRẠNG THÁI THIẾT BỊ</p><h2>Ba ngăn, một lịch trình</h2></div><span className="live-label"><span className="status-dot" /> CẬP NHẬT 2 GIÂY</span></div>
+          <div className="section-heading"><div><p className="eyebrow">TRẠNG THÁI THIẾT BỊ</p><h2>Ba ngăn, một lịch trình</h2></div><span className={`live-label ${connectionError ? 'offline-label' : ''}`}><span className="status-dot" />{connectionError ? 'CHỜ KẾT NỐI' : 'CẬP NHẬT 2 GIÂY'}</span></div>
           <div className="compartment-grid">
             {(device?.compartments ?? []).map((item, index) => (
-              <article className={`compartment-card ${item.lid_open ? 'lid-open' : ''}`} key={item.slot} style={{ animationDelay: `${index * 90}ms` }}>
+              <article className={`compartment-card ${item.lid_open ? 'lid-open' : ''} ${item.buzzer_on ? 'reminder-active' : ''}`} key={item.slot} style={{ animationDelay: `${index * 90}ms` }}>
+                <div className={`lid-3d-stage ${item.lid_open ? 'is-open' : 'is-closed'}`} aria-label={item.lid_open ? 'Nắp 3D đang mở' : 'Nắp 3D đang đóng'}>
+                  <div className="lid-3d-base">
+                    <div className="lid-3d-cover">
+                      <span className="lid-3d-handle" />
+                    </div>
+                  </div>
+                </div>
                 <div className="card-topline"><span className="slot-label">NGĂN {String(item.slot).padStart(2, '0')}</span><span className={`lid-badge ${item.lid_open ? 'opened' : ''}`}><i />{item.lid_open ? 'Đang mở' : 'Đang đóng'}</span></div>
                 <div className="medication-title"><h3>{item.medication_name}</h3><span className="medication-index">0{item.slot}</span></div>
                 <div className="dose-visual" aria-label={`${item.pill_count} viên mẫu`}><div className="pill-stack">{Array.from({ length: Math.min(item.pill_count, 8) }, (_, pill) => <span key={pill} />)}</div><div><strong>{item.pill_count}</strong><small>viên mẫu</small></div></div>
                 <div className="card-metrics"><div><span>KHỐI LƯỢNG</span><strong>{item.weight_grams.toFixed(1)} <small>g</small></strong></div><div><span>ĐÈN BÁO</span><strong><i className={`led ${item.led === 'Bật' ? 'led-on' : ''}`} />{item.led}</strong></div></div>
-                <div className="reminder-line"><span>NHẮC UỐNG</span><strong>{item.reminder}</strong></div>
-                <button className={`lid-button ${item.lid_open ? 'secondary-button' : 'primary-button'}`} type="button" disabled={busySlot === item.slot} onClick={() => void toggleLid(item.slot, !item.lid_open)}>
-                  {busySlot === item.slot ? 'Đang gửi…' : item.lid_open ? 'Đóng nắp' : 'Mở nắp'} <span aria-hidden="true">{item.lid_open ? '↙' : '↗'}</span>
-                </button>
+                <div className="reminder-line"><span>NHẮC UỐNG</span><strong className={item.buzzer_on ? 'reminder-text-active' : ''}>{item.reminder}</strong></div>
+                <div className="buzzer-line"><span className={`buzzer-indicator ${item.buzzer_on ? 'buzzer-on' : ''}`}>♫</span><span>Còi nhắc</span><strong>{item.buzzer_on ? 'Đang báo' : 'Im lặng'}</strong></div>
+                <div className="compartment-actions">
+                  <button className={`lid-button ${item.lid_open ? 'secondary-button' : 'primary-button'}`} type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void sendEvent(item.slot, item.lid_open ? 'LID_CLOSED' : 'LID_OPENED')}>
+                    {busySlot === item.slot ? 'Đang gửi…' : item.lid_open ? 'Đóng nắp' : 'Mở nắp'} <span aria-hidden="true">{item.lid_open ? '↙' : '↗'}</span>
+                  </button>
+                  <button className="dispense-button" type="button" disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl} onClick={() => void takeOnePill(item)} title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết thuốc mẫu' : undefined}>Lấy một viên <span>−0,5 g</span></button>
+                  <button className="noise-button" type="button" disabled={!item.lid_open || busySlot === item.slot || busyControl} onClick={() => void injectNoise(item)} title="Thử nhiễu tải trọng 0.1g (kiểm thử T033, không làm giảm viên)">Thử nhiễu cân <span>−0,1 g</span></button>
+                  {item.can_confirm && <button className="confirm-button" type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void confirmDose(item)}>Nút xác nhận trên hộp</button>}
+                </div>
+                <p className="safety-note">Mở nắp hoặc lấy viên không chứng minh đã uống.</p>
               </article>
             ))}
+
             {!device && !loading && <div className="empty-state">Chưa có trạng thái hộp. Kiểm tra backend và đăng nhập operator.</div>}
           </div>
         </section>
@@ -218,21 +450,25 @@ function App() {
         <section className="lower-grid">
           <div className="schedule-panel">
             <div className="section-heading compact"><div><p className="eyebrow">ĐỒNG BỘ TỪ DATABASE</p><h2>Lịch đang bật</h2></div><span className="count-pill">{device?.active_schedules.length ?? 0}</span></div>
-            {nextSchedule && <div className="next-dose"><div className="next-icon">↗</div><div><span>LỊCH SẮP TỚI</span><strong>{nextSchedule.medication_name}</strong><small>Ngăn {nextSchedule.slot} · {nextSchedule.time}</small></div><time>{nextSchedule.time}</time></div>}
+            {nextSchedule && <div className="next-dose"><div className="next-icon">↗</div><div><span>LỊCH TIẾP THEO</span><strong>{nextSchedule.medication_name}</strong><small>Ngăn {nextSchedule.slot} · {nextSchedule.time}</small></div><time>{nextSchedule.time}</time></div>}
             <div className="schedule-list">
-              {(device?.active_schedules ?? []).map((schedule, index) => <div className="schedule-row" key={`${schedule.slot}-${schedule.time}-${schedule.medication_name}-${index}`}><time>{schedule.time}</time><span className="schedule-slot">N{schedule.slot}</span><strong>{schedule.medication_name}</strong><span className="active-tag">ĐANG BẬT</span></div>)}
+              {(device?.active_schedules ?? []).map((schedule) => <div className="schedule-row" key={schedule.id}><time>{schedule.time}</time><span className="schedule-slot">N{schedule.slot}</span><strong>{schedule.medication_name}</strong><span className="active-tag">ĐANG BẬT</span></div>)}
               {device && device.active_schedules.length === 0 && <p className="empty-schedules">Chưa có lịch đang bật. Lịch mới từ ứng dụng Flutter sẽ xuất hiện tại đây.</p>}
             </div>
-            <p className="sync-note"><span className="sync-arrows">↻</span> Tải lại tự động mỗi 2 giây · cùng dữ liệu với ứng dụng Flutter</p>
+            <p className="sync-note"><span className="sync-arrows">↻</span> Đồng bộ mỗi 2 giây · lịch dùng chung với ứng dụng Flutter</p>
           </div>
-          <aside className="disabled-panel">
-            <div className="section-heading compact"><div><p className="eyebrow">GIAI ĐOẠN SAU</p><h2>Thao tác khác</h2></div><span className="lock-mark">Ⅱ</span></div>
-            <div className="disabled-actions">
-              {['Lấy một viên', 'Xác nhận đã uống', '+1 phút', '+2 phút', '+5 phút', 'Đặt lại hộp'].map((action) => <button type="button" disabled key={action}><span>{action}</span><small>CHƯA TRIỂN KHAI</small></button>)}
+
+          <aside className="activity-panel">
+            <div className="section-heading compact"><div><p className="eyebrow">NHẬT KÝ THIẾT BỊ</p><h2>Thao tác gần đây</h2></div><span className="count-pill">{events.length}</span></div>
+            <div className="activity-list">
+              {events.map((event) => <div className="activity-row" key={event.id}><span className={`activity-symbol ${event.event_type === 'ALERT_CREATED' ? 'activity-alert' : event.event_type === 'DOSE_CONFIRMED' ? 'activity-confirmed' : ''}`}>{event.event_type === 'LID_OPENED' ? '↗' : event.event_type === 'LID_CLOSED' ? '↙' : event.event_type === 'PILL_DISPENSED' ? '−' : event.event_type === 'DOSE_CONFIRMED' ? '✓' : event.event_type === 'ALERT_CREATED' ? '!' : event.event_type === 'CLOCK_ADVANCED' ? '↻' : event.event_type === 'SIMULATION_RESET' ? '⟲' : '♫'}</span><div className="activity-copy"><strong>{eventLabel(event)}</strong><small>{event.payload.slot ? `Ngăn ${event.payload.slot}` : 'Hộp mô phỏng'} · {event.payload.virtual_time ? clockLabel(String(event.payload.virtual_time)) : new Date(event.created_at).toLocaleTimeString('vi-VN')}</small></div></div>)}
+              {device && events.length === 0 && <p className="empty-activity">Chưa có thao tác trong phiên demo. Mở nắp hoặc tiến đồng hồ để bắt đầu.</p>}
+              {!device && <p className="empty-activity">Nhật ký sẽ xuất hiện sau khi tải trạng thái thiết bị.</p>}
             </div>
-            <p className="safety-note">Mở nắp không xác nhận người dùng đã uống thuốc.</p>
+            <p className="sync-note"><span className="sync-arrows">↻</span> Lịch sử sự kiện được lưu trên backend</p>
           </aside>
         </section>
+
         <footer className="page-footer"><span>SMART PILL BOX <i>·</i> BẢN MÔ PHỎNG</span><span>Dữ liệu giả · Không dùng cho chăm sóc y tế thực tế</span></footer>
       </main>
     </div>
