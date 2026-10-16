@@ -30,3 +30,6 @@ flutter-app/build/
 flutter-app/android/local.properties
 flutter-app/android/key.properties
 flutter-app/android/.gradle/
+
+# Agent local artifacts
+.agents/

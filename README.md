@@ -60,4 +60,8 @@ flutter analyze
 flutter test
 ```
 
-Đã có đăng nhập JWT, quyền caregiver/operator, hồ sơ, tạo/sửa lịch, trạng thái ba ngăn và sự kiện mở/đóng nắp có chống UUID trùng. Nắp mở không xác nhận thuốc đã uống. Tiến đồng hồ, lấy viên, LED/buzzer, nhắc lại, lịch sử và cảnh báo chưa triển khai.
+Website operator mô phỏng thiết bị phần cứng ảo 3 ngăn kết nối trực tiếp với backend FastAPI và SQLite. Hệ thống hỗ trợ mở/đóng nắp, nắp 3D-lite bằng CSS, đọc cảm biến tải trọng `WEIGHT_READING` (với ngưỡng nhận diện lấy thuốc 0.3g và hỗ trợ thử nhiễu cân 0.1g không làm giảm viên), nút bấm xác nhận trên hộp `CONFIRM_PRESSED`, tiến đồng hồ ảo (`+1m`, `+2m`, `+5m` và `Mốc tiếp theo`), đèn LED, còi báo Web Audio API và nhật ký thao tác đầy đủ.
+
+Các API mô phỏng chính: `GET /api/simulation/state`, `POST /api/simulation/events` (nhận `LID_OPENED`, `LID_CLOSED`, `WEIGHT_READING`, `CONFIRM_PRESSED` kèm `compartment_id`/`slot`), `POST /api/simulation/advance` (hoặc `/clock`) với `{ "minutes": 1 }`, và `POST /api/simulation/reset` với `{ "confirm": true }`. UUID giúp thao tác không bị áp dụng hai lần khi gửi lại (idempotency). Reset yêu cầu xác nhận, xóa dữ liệu demo/nhật ký cũ và khôi phục đồng hồ cùng số viên về ban đầu mà không làm mất tài khoản hay lịch thuốc của caregiver. Nắp mở hoặc sụt giảm trọng lượng không được coi là bằng chứng xác thực đã uống cho đến khi có sự kiện xác nhận.
+
+Flutter hiện có đăng nhập, danh sách/tạo lịch và trang hôm nay ban đầu. Màn hình lịch sử và cảnh báo trong Flutter, thông báo nền, cảm biến thật và trình dựng APK trên emulator chưa được triển khai trong phần này.
