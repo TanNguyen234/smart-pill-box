@@ -180,6 +180,7 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
                 can_confirm=False,
             )
         compartment["compartment_id"] = compartment["slot"]
+        compartment["buzzer"] = "Bật" if compartment.get("buzzer_on") else "Tắt"
         compartments.append(compartment)
 
     current_dt = parse_virtual_clock(state.virtual_clock)
@@ -433,7 +434,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 action = "đã mở" if new_open else "đã đóng"
                 raise HTTPException(status_code=409, detail=f"Nắp ngăn {target_slot} {action}")
             compartment["lid_open"] = new_open
-        elif payload.event_type == "WEIGHT_READING":
+        elif payload.event_type in {"WEIGHT_READING", "WEIGHT_SAMPLE"}:
             new_weight = payload.resolved_weight_g
             if new_weight is None:
                 raise HTTPException(status_code=422, detail="Cần cung cấp trọng lượng weight_g")
@@ -449,7 +450,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 compartment["weight_grams"] = round(max(0.0, new_weight), 1)
             else:
                 compartment["weight_grams"] = round(max(0.0, new_weight), 1)
-        elif payload.event_type == "PILL_DISPENSED":
+        elif payload.event_type in {"PILL_DISPENSED", "PILL_REMOVED"}:
             if not compartment["lid_open"]:
                 raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy viên")
             if compartment["pill_count"] <= 0:
@@ -534,8 +535,8 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         user: User = Depends(operator_only),
         db: Session = Depends(get_db),
     ):
-        if not payload.confirm:
-            raise HTTPException(status_code=422, detail="Yêu cầu xác nhận confirm=true")
+        if not payload.confirm and payload.confirmation != "RESET_DEMO":
+            raise HTTPException(status_code=422, detail="Yêu cầu xác nhận confirm=true hoặc confirmation='RESET_DEMO'")
         state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
         if state is None:
             raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")

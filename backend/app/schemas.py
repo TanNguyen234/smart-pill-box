@@ -80,7 +80,9 @@ class EventInput(BaseModel):
         "LID_OPENED",
         "LID_CLOSED",
         "WEIGHT_READING",
+        "WEIGHT_SAMPLE",
         "CONFIRM_PRESSED",
+        "PILL_REMOVED",
         "PILL_DISPENSED",
         "DOSE_CONFIRMED",
     ]
@@ -99,8 +101,11 @@ class EventInput(BaseModel):
     def resolved_weight_g(self) -> float | None:
         if self.weight_g is not None:
             return float(self.weight_g)
-        if isinstance(self.payload, dict) and "weight_g" in self.payload:
-            return float(self.payload["weight_g"])
+        if isinstance(self.payload, dict):
+            if "weight_g" in self.payload:
+                return float(self.payload["weight_g"])
+            if "weight_grams" in self.payload:
+                return float(self.payload["weight_grams"])
         return None
 
     @property
@@ -119,4 +124,5 @@ class ClockAdvanceInput(BaseModel):
 
 class SimulationResetInput(BaseModel):
     confirm: bool = True
+    confirmation: str | None = None
     event_uuid: UUID = Field(default_factory=uuid4)
