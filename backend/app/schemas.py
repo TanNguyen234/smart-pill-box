@@ -1,6 +1,6 @@
 import re
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -72,8 +72,57 @@ class SchedulePatch(BaseModel):
             raise ValueError("Giờ phải theo định dạng HH:mm")
         return value
 
-
 class EventInput(BaseModel):
-    event_uuid: UUID
-    slot: int = Field(ge=1, le=3)
-    event_type: Literal["LID_OPENED", "LID_CLOSED"]
+    event_uuid: UUID = Field(default_factory=uuid4)
+    slot: int | None = Field(default=None, ge=1, le=3)
+    compartment_id: int | None = Field(default=None, ge=1, le=3)
+    event_type: Literal[
+        "LID_OPENED",
+        "LID_CLOSED",
+        "WEIGHT_READING",
+        "WEIGHT_SAMPLE",
+        "CONFIRM_PRESSED",
+        "PILL_REMOVED",
+        "PILL_DISPENSED",
+        "DOSE_CONFIRMED",
+    ]
+    payload: dict | None = None
+    weight_g: float | None = None
+    occurrence_id: int | None = None
+
+    @property
+    def resolved_slot(self) -> int:
+        target = self.compartment_id if self.compartment_id is not None else self.slot
+        if target is None:
+            raise ValueError("Cần cung cấp slot hoặc compartment_id")
+        return target
+
+    @property
+    def resolved_weight_g(self) -> float | None:
+        if self.weight_g is not None:
+            return float(self.weight_g)
+        if isinstance(self.payload, dict):
+            if "weight_g" in self.payload:
+                return float(self.payload["weight_g"])
+            if "weight_grams" in self.payload:
+                return float(self.payload["weight_grams"])
+        return None
+
+    @property
+    def resolved_occurrence_id(self) -> int | None:
+        if self.occurrence_id is not None:
+            return int(self.occurrence_id)
+        if isinstance(self.payload, dict) and "occurrence_id" in self.payload:
+            return int(self.payload["occurrence_id"])
+        return None
+
+
+class ClockAdvanceInput(BaseModel):
+    event_uuid: UUID = Field(default_factory=uuid4)
+    minutes: int = Field(default=1, ge=1, le=60)
+
+
+class SimulationResetInput(BaseModel):
+    confirm: bool = True
+    confirmation: str | None = None
+    event_uuid: UUID = Field(default_factory=uuid4)
