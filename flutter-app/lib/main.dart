@@ -73,6 +73,7 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
         home: _account == null
             ? LoginScreen(onLogin: _login)
             : HomeScreen(
+                api: _api,
                 account: _account!,
                 patients: _patients,
                 schedules: _schedules,

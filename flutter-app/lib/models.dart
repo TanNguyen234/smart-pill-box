@@ -1,5 +1,10 @@
 class Account {
-  const Account({required this.id, required this.email, required this.displayName, required this.role});
+  const Account({
+    required this.id,
+    required this.email,
+    required this.displayName,
+    required this.role,
+  });
 
   final int id;
   final String email;
@@ -51,4 +56,122 @@ class MedicationSchedule {
         time: json['time'] as String,
         active: json['active'] as bool,
       );
+
+  MedicationSchedule copyWith({
+    int? id,
+    int? patientId,
+    String? medicationName,
+    int? slot,
+    String? time,
+    bool? active,
+  }) =>
+      MedicationSchedule(
+        id: id ?? this.id,
+        patientId: patientId ?? this.patientId,
+        medicationName: medicationName ?? this.medicationName,
+        slot: slot ?? this.slot,
+        time: time ?? this.time,
+        active: active ?? this.active,
+      );
+}
+
+class DeviceEventItem {
+  const DeviceEventItem({
+    required this.id,
+    required this.eventUuid,
+    required this.eventType,
+    this.patientId,
+    this.slot,
+    this.occurrenceId,
+    required this.payload,
+    required this.timestamp,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String eventUuid;
+  final String eventType;
+  final int? patientId;
+  final int? slot;
+  final int? occurrenceId;
+  final Map<String, dynamic> payload;
+  final String timestamp;
+  final String createdAt;
+
+  String get dateKey {
+    final source = timestamp.isNotEmpty ? timestamp : createdAt;
+    return source.length >= 10 ? source.substring(0, 10) : source;
+  }
+
+  factory DeviceEventItem.fromJson(Map<String, dynamic> json) {
+    final rawPayload = json['payload'];
+    final payload = rawPayload is Map<String, dynamic>
+        ? rawPayload
+        : <String, dynamic>{};
+    final resolvedSlot = (json['slot'] as int?) ??
+        (payload['slot'] as int?) ??
+        (payload['compartment_id'] as int?);
+    final createdAt = (json['created_at'] ?? '').toString();
+    final timestamp = (json['occurred_at'] as String?) ??
+        (payload['virtual_time'] as String?) ??
+        createdAt;
+
+    return DeviceEventItem(
+      id: json['id'] as int,
+      eventUuid: (json['event_uuid'] ?? '').toString(),
+      eventType: (json['event_type'] ?? '').toString(),
+      patientId: json['patient_id'] as int?,
+      slot: resolvedSlot,
+      occurrenceId: json['occurrence_id'] as int?,
+      payload: payload,
+      timestamp: timestamp,
+      createdAt: createdAt,
+    );
+  }
+}
+
+class AlertItem {
+  const AlertItem({
+    required this.id,
+    required this.patientId,
+    this.occurrenceId,
+    required this.kind,
+    required this.status,
+    required this.message,
+    this.note,
+    required this.createdAt,
+    this.resolvedAt,
+  });
+
+  final int id;
+  final int patientId;
+  final int? occurrenceId;
+  final String kind;
+  final String status;
+  final String message;
+  final String? note;
+  final String createdAt;
+  final String? resolvedAt;
+
+  bool get isPending => status == 'PENDING';
+
+  factory AlertItem.fromJson(Map<String, dynamic> json) {
+    final rawStatus = (json['status'] as String?)?.trim().toUpperCase();
+    final resolvedAt = json['resolved_at'] as String?;
+    final status = (rawStatus != null && rawStatus.isNotEmpty)
+        ? rawStatus
+        : (resolvedAt != null ? 'CHECKED' : 'PENDING');
+
+    return AlertItem(
+      id: json['id'] as int,
+      patientId: json['patient_id'] as int,
+      occurrenceId: json['occurrence_id'] as int?,
+      kind: (json['kind'] ?? 'dose_overdue').toString(),
+      status: status,
+      message: (json['message'] ?? '').toString(),
+      note: json['note'] as String?,
+      createdAt: (json['created_at'] ?? '').toString(),
+      resolvedAt: resolvedAt,
+    );
+  }
 }

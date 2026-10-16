@@ -68,6 +68,38 @@ def test_health_login_and_role_scoped_schedules(tmp_path):
         f"/api/schedules/{schedule_b['id']}", headers=caregiver_a, json={"time": "09:00"}
     ).status_code == 404
 
+    # Chặn truy cập không có JWT hoặc token giả mạo
+    assert client.get("/api/me").status_code == 401
+    assert client.get("/api/patients").status_code == 401
+    assert client.get("/api/schedules").status_code == 401
+    assert client.get("/api/schedules", headers={"Authorization": "Bearer invalid-token"}).status_code == 401
+
+    # Chặn tạo lịch trùng patient_id + slot + time đang active=True
+    duplicate_post = client.post(
+        "/api/schedules",
+        headers=caregiver_a,
+        json={"patient_id": patient_a["id"], "medication_name": "Thuốc trùng", "slot": 1, "time": "08:10", "active": True},
+    )
+    assert duplicate_post.status_code == 409
+
+    # Cho phép tạo lịch trùng giờ/ngăn nếu active=False, nhưng chặn khi bật lại (PATCH active=True)
+    inactive_dup = client.post(
+        "/api/schedules",
+        headers=caregiver_a,
+        json={"patient_id": patient_a["id"], "medication_name": "Thuốc tắt", "slot": 1, "time": "08:10", "active": False},
+    )
+    assert inactive_dup.status_code == 201
+    inactive_id = inactive_dup.json()["id"]
+    assert client.patch(
+        f"/api/schedules/{inactive_id}", headers=caregiver_a, json={"active": True}
+    ).status_code == 409
+
+    # Chặn sửa (PATCH) giờ/ngăn của lịch đang bật sang khung giờ/ngăn đã có lịch bật khác (08:00 ngăn 1)
+    created_id = created.json()["id"]
+    assert client.patch(
+        f"/api/schedules/{created_id}", headers=caregiver_a, json={"time": "08:00", "slot": 1}
+    ).status_code == 409
+
     assert client.get("/api/simulation/state", headers=caregiver_a).status_code == 403
     assert client.post(
         "/api/simulation/events",
