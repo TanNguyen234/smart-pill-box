@@ -361,6 +361,14 @@ function App() {
             <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             {loginError && <p className="form-error" role="alert">{loginError}</p>}
             <button className="primary-button login-button" type="submit">Đăng nhập <span aria-hidden="true">↗</span></button>
+            <button
+              type="button"
+              className="demo-account-hint"
+              onClick={() => { setEmail('operator@example.test'); setPassword('Password123!'); }}
+              title="Bấm để điền tài khoản Operator mặc định"
+            >
+              🔑 Điền nhanh: operator@example.test • Password123!
+            </button>
           </form>
           <p className="login-footnote">Dữ liệu demo · Không dùng hồ sơ bệnh nhân thật</p>
         </section>
@@ -417,29 +425,110 @@ function App() {
           <div className="section-heading"><div><p className="eyebrow">TRẠNG THÁI THIẾT BỊ</p><h2>Ba ngăn, một lịch trình</h2></div><span className={`live-label ${connectionError ? 'offline-label' : ''}`}><span className="status-dot" />{connectionError ? 'CHỜ KẾT NỐI' : 'CẬP NHẬT 2 GIÂY'}</span></div>
           <div className="compartment-grid">
             {(device?.compartments ?? []).map((item, index) => (
-              <article className={`compartment-card ${item.lid_open ? 'lid-open' : ''} ${item.buzzer_on ? 'reminder-active' : ''}`} key={item.slot} style={{ animationDelay: `${index * 90}ms` }}>
-                <div className={`lid-3d-stage ${item.lid_open ? 'is-open' : 'is-closed'}`} aria-label={item.lid_open ? 'Nắp 3D đang mở' : 'Nắp 3D đang đóng'}>
-                  <div className="lid-3d-base">
-                    <div className="lid-3d-cover">
-                      <span className="lid-3d-handle" />
+              <article className={`compartment-card slot-${item.slot} ${item.lid_open ? 'lid-open' : ''} ${item.buzzer_on ? 'reminder-active' : ''}`} key={item.slot} style={{ animationDelay: `${index * 90}ms` }}>
+                <div className="card-topline">
+                  <div className="slot-identity">
+                    <span className="slot-pill-badge">0{item.slot}</span>
+                    <span className="slot-label">NGĂN SỐ {item.slot}</span>
+                  </div>
+                  <span className={`lid-badge ${item.lid_open ? 'opened' : 'closed'}`}>
+                    <span className="lid-dot" />
+                    {item.lid_open ? 'Nắp đang mở' : 'Nắp đã đóng'}
+                  </span>
+                </div>
+
+                <div className={`physical-chamber ${item.lid_open ? 'is-open' : 'is-closed'}`} aria-label={item.lid_open ? 'Nắp ngăn đang mở' : 'Nắp ngăn đang đóng'}>
+                  <div className="chamber-hinge" />
+                  <div className="chamber-lid">
+                    <div className="lid-frost-glass">
+                      <span className="lid-grip-handle" />
+                    </div>
+                  </div>
+                  <div className="chamber-interior">
+                    <div className="led-lamp-container">
+                      <div className={`led-lens ${item.led === 'Bật' ? 'led-active' : ''}`} title={`Đèn LED: ${item.led}`}>
+                        <div className="led-glow-ring" />
+                      </div>
+                      <span className="led-text">{item.led === 'Bật' ? 'LED BẬT' : 'LED TẮT'}</span>
+                    </div>
+
+                    <div className="pill-well" aria-label={`${item.pill_count} viên thuốc trong ngăn`}>
+                      <div className="pills-scatter">
+                        {Array.from({ length: Math.min(item.pill_count, 8) }, (_, pill) => (
+                          <div className={`pill-unit pill-type-${item.slot}`} key={pill}>
+                            <span className="pill-half-left" />
+                            <span className="pill-half-right" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="pill-counter-tag">
+                        <strong>{item.pill_count}</strong>
+                        <span>viên mẫu</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="card-topline"><span className="slot-label">NGĂN {String(item.slot).padStart(2, '0')}</span><span className={`lid-badge ${item.lid_open ? 'opened' : ''}`}><i />{item.lid_open ? 'Đang mở' : 'Đang đóng'}</span></div>
-                <div className="medication-title"><h3>{item.medication_name}</h3><span className="medication-index">0{item.slot}</span></div>
-                <div className="dose-visual" aria-label={`${item.pill_count} viên mẫu`}><div className="pill-stack">{Array.from({ length: Math.min(item.pill_count, 8) }, (_, pill) => <span key={pill} />)}</div><div><strong>{item.pill_count}</strong><small>viên mẫu</small></div></div>
-                <div className="card-metrics"><div><span>KHỐI LƯỢNG</span><strong>{item.weight_grams.toFixed(1)} <small>g</small></strong></div><div><span>ĐÈN BÁO</span><strong><i className={`led ${item.led === 'Bật' ? 'led-on' : ''}`} />{item.led}</strong></div></div>
-                <div className="reminder-line"><span>NHẮC UỐNG</span><strong className={item.buzzer_on ? 'reminder-text-active' : ''}>{item.reminder}</strong></div>
-                <div className="buzzer-line"><span className={`buzzer-indicator ${item.buzzer_on ? 'buzzer-on' : ''}`}>♫</span><span>Còi nhắc</span><strong>{item.buzzer_on ? 'Đang báo' : 'Im lặng'}</strong></div>
+
+                <div className="medication-title">
+                  <h3>{item.medication_name}</h3>
+                  <span className="medication-type-tag">Cữ uống theo lịch</span>
+                </div>
+
+                <div className="card-metrics">
+                  <div className="metric-box scale-metric">
+                    <span className="metric-label">CẢM BIẾN TẢI TRỌNG</span>
+                    <div className="oled-scale-readout">
+                      <span className="oled-tag">LOADCELL</span>
+                      <strong className="oled-value">{item.weight_grams.toFixed(1)} <small>g</small></strong>
+                    </div>
+                  </div>
+                  <div className="metric-box reminder-metric">
+                    <span className="metric-label">TRẠNG THÁI NHẮC</span>
+                    <strong className={`reminder-status-chip ${item.buzzer_on ? 'reminder-text-active' : ''}`}>
+                      {item.buzzer_on && <span className="urgent-pulse-dot" />}
+                      {item.reminder}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className={`buzzer-line ${item.buzzer_on ? 'buzzer-active' : ''}`}>
+                  <span className={`buzzer-indicator ${item.buzzer_on ? 'buzzer-on' : ''}`}>
+                    {item.buzzer_on ? '🔊' : '🔈'}
+                  </span>
+                  <div className="buzzer-copy">
+                    <span>Còi nhắc hộp thuốc</span>
+                    <strong>{item.buzzer_on ? 'Đang phát âm thanh nhắc nhở' : 'Còi đang im lặng'}</strong>
+                  </div>
+                  {item.buzzer_on && (
+                    <div className="sound-wave-bars" aria-hidden="true">
+                      <span /><span /><span />
+                    </div>
+                  )}
+                </div>
+
                 <div className="compartment-actions">
                   <button className={`lid-button ${item.lid_open ? 'secondary-button' : 'primary-button'}`} type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void sendEvent(item.slot, item.lid_open ? 'LID_CLOSED' : 'LID_OPENED')}>
-                    {busySlot === item.slot ? 'Đang gửi…' : item.lid_open ? 'Đóng nắp' : 'Mở nắp'} <span aria-hidden="true">{item.lid_open ? '↙' : '↗'}</span>
+                    <span className="btn-icon">{item.lid_open ? '📥' : '📤'}</span>
+                    <span>{busySlot === item.slot ? 'Đang gửi…' : item.lid_open ? 'Đóng nắp ngăn' : 'Mở nắp ngăn'}</span>
                   </button>
-                  <button className="dispense-button" type="button" disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl} onClick={() => void takeOnePill(item)} title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết thuốc mẫu' : undefined}>Lấy một viên <span>−0,5 g</span></button>
-                  <button className="noise-button" type="button" disabled={!item.lid_open || busySlot === item.slot || busyControl} onClick={() => void injectNoise(item)} title="Thử nhiễu tải trọng 0.1g (kiểm thử T033, không làm giảm viên)">Thử nhiễu cân <span>−0,1 g</span></button>
-                  {item.can_confirm && <button className="confirm-button" type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void confirmDose(item)}>Nút xác nhận trên hộp</button>}
+                  <button className="dispense-button" type="button" disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl} onClick={() => void takeOnePill(item)} title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết thuốc mẫu' : undefined}>
+                    <span className="btn-icon">💊</span>
+                    <span>Lấy một viên</span>
+                    <span className="btn-weight-change">−0,5 g</span>
+                  </button>
+                  <button className="noise-button" type="button" disabled={!item.lid_open || busySlot === item.slot || busyControl} onClick={() => void injectNoise(item)} title="Thử nhiễu tải trọng 0.1g (kiểm thử T033, không làm giảm viên)">
+                    <span className="btn-icon">⚡</span>
+                    <span>Thử nhiễu cân</span>
+                    <span className="btn-weight-change">−0,1 g</span>
+                  </button>
+                  {item.can_confirm && (
+                    <button className="confirm-button" type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void confirmDose(item)}>
+                      <span className="confirm-glow" />
+                      <span>✓ Nút xác nhận trên hộp</span>
+                    </button>
+                  )}
                 </div>
-                <p className="safety-note">Mở nắp hoặc lấy viên không chứng minh đã uống.</p>
+                <p className="safety-note">Cảm biến chỉ ghi nhận khi thao tác thật • Không chứng minh đã uống</p>
               </article>
             ))}
 
