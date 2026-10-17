@@ -36,6 +36,11 @@ def seed_demo(session_factory, demo_password: str) -> None:
                 )
                 db.add(user)
                 db.flush()
+            else:
+                user.password_hash = password_hash.hash(demo_password)
+                user.display_name = name
+                user.role = role
+                user.active = True
             users[email] = user
 
         patients = {}
@@ -80,7 +85,9 @@ def seed_demo(session_factory, demo_password: str) -> None:
             db.add(
                 SimulationState(
                     device_id="SIM-001",
+                    patient_id=patients["caregiver-a@example.test"].id,
                     virtual_clock=DEFAULT_SIMULATION_CLOCK,
                     compartments=default_compartments(),
                 )
             )
+

@@ -40,8 +40,10 @@ class DoseOccurrence(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     schedule_id: Mapped[int] = mapped_column(ForeignKey("medication_schedules.id"), index=True)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="scheduled")
+    reminder_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class DeviceEvent(Base):
@@ -50,8 +52,11 @@ class DeviceEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     event_uuid: Mapped[str] = mapped_column(String(36), index=True)
     event_type: Mapped[str] = mapped_column(String(30))
+    patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True)
+    slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
     occurrence_id: Mapped[int | None] = mapped_column(ForeignKey("dose_occurrences.id"), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -60,8 +65,11 @@ class Alert(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
     occurrence_id: Mapped[int | None] = mapped_column(ForeignKey("dose_occurrences.id"), nullable=True)
-    kind: Mapped[str] = mapped_column(String(40))
+    recipient_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(40), default="dose_overdue")
+    status: Mapped[str] = mapped_column(String(30), default="PENDING")
     message: Mapped[str] = mapped_column(String(255))
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -70,6 +78,8 @@ class SimulationState(Base):
     __tablename__ = "simulation_state"
     id: Mapped[int] = mapped_column(primary_key=True)
     device_id: Mapped[str] = mapped_column(String(30), unique=True)
+    patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True)
     virtual_clock: Mapped[str] = mapped_column(String(40))
     compartments: Mapped[list] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+

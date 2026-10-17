@@ -327,3 +327,149 @@ def test_hardware_events_and_noise_threshold(tmp_path):
     )
     assert confirmed.status_code == 200
     assert confirmed.json()["compartments"][0]["reminder"] == "Đã xác nhận đúng hạn"
+
+
+def test_schedule_collision_and_scoping(tmp_path):
+    client = make_client(tmp_path)
+    caregiver_a = login(client, "caregiver-a@example.test")
+    caregiver_b = login(client, "caregiver-b@example.test")
+
+    # Patient 1 already has slot 1 at 08:00 active (from seed)
+    dup = client.post(
+        "/api/schedules",
+        headers=caregiver_a,
+        json={"patient_id": 1, "medication_name": "Thuốc Trùng", "slot": 1, "time": "08:00", "active": True},
+    )
+    assert dup.status_code == 409
+    assert "đã có lịch uống" in dup.json()["detail"]
+
+    # Valid new schedule at 08:30
+    created = client.post(
+        "/api/schedules",
+        headers=caregiver_a,
+        json={"patient_id": 1, "medication_name": "Thuốc Mới", "slot": 1, "time": "08:30", "active": True},
+    )
+    assert created.status_code == 201
+    new_id = created.json()["id"]
+
+    # Try patching new schedule to collide with 08:00
+    patch_dup = client.patch(
+        f"/api/schedules/{new_id}",
+        headers=caregiver_a,
+        json={"time": "08:00"},
+    )
+    assert patch_dup.status_code == 409
+
+    # Caregiver B cannot touch Patient 1
+    unauthorized_create = client.post(
+        "/api/schedules",
+        headers=caregiver_b,
+        json={"patient_id": 1, "medication_name": "Thuốc Hack", "slot": 3, "time": "15:00", "active": True},
+    )
+    assert unauthorized_create.status_code == 403
+
+    unauthorized_patch = client.patch(
+        f"/api/schedules/{new_id}",
+        headers=caregiver_b,
+        json={"time": "16:00"},
+    )
+    assert unauthorized_patch.status_code == 404
+
+
+def test_doses_events_alerts_endpoints_and_permissions(tmp_path):
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+    caregiver_a = login(client, "caregiver-a@example.test")
+    caregiver_b = login(client, "caregiver-b@example.test")
+
+    # Advance clock to 08:00 to trigger DoseOccurrence for slot 1
+    adv = client.post("/api/simulation/clock/advance", headers=operator, json={"minutes": 1})
+    assert adv.status_code == 200
+
+    # Caregiver A queries /api/doses
+    doses_res = client.get("/api/doses", headers=caregiver_a)
+    assert doses_res.status_code == 200
+    doses = doses_res.json()
+    assert len(doses) >= 1
+    assert doses[0]["status"] == "pending"
+
+    # Caregiver B queries /api/doses -> Patient 2 has no dose at 08:00
+    b_doses = client.get("/api/doses", headers=caregiver_b).json()
+    assert len(b_doses) == 0
+
+    # Advance clock 5 minutes -> status overdue and Alert created
+    client.post("/api/simulation/advance", headers=operator, json={"minutes": 5})
+
+    # Caregiver A gets /api/alerts
+    alerts_res = client.get("/api/alerts", headers=caregiver_a)
+    assert alerts_res.status_code == 200
+    alerts_list = alerts_res.json()
+    assert len(alerts_list) == 1
+    alert_id = alerts_list[0]["id"]
+    assert alerts_list[0]["status"] == "PENDING"
+    assert alerts_list[0]["resolved_at"] is None
+
+    # Caregiver B cannot see this alert
+    b_alerts = client.get("/api/alerts", headers=caregiver_b).json()
+    assert len(b_alerts) == 0
+
+    # Caregiver B cannot patch this alert
+    b_patch = client.patch(f"/api/alerts/{alert_id}", headers=caregiver_b, json={"status": "CHECKED"})
+    assert b_patch.status_code == 404
+
+    # Patch with IGNORED but without note -> 422
+    err_patch = client.patch(f"/api/alerts/{alert_id}", headers=caregiver_a, json={"status": "IGNORED", "note": "   "})
+    assert err_patch.status_code == 422
+
+    # Patch with IGNORED and valid note -> 200
+    ok_patch = client.patch(
+        f"/api/alerts/{alert_id}",
+        headers=caregiver_a,
+        json={"status": "IGNORED", "note": "Bác sĩ hướng dẫn tạm dừng"},
+    )
+    assert ok_patch.status_code == 200
+    patched_data = ok_patch.json()
+    assert patched_data["status"] == "IGNORED"
+    assert patched_data["note"] == "Bác sĩ hướng dẫn tạm dừng"
+    assert patched_data["resolved_at"] is not None
+
+    # Resolve alert directly
+    res_alert = client.post(
+        f"/api/alerts/{alert_id}/resolve",
+        headers=caregiver_a,
+        json={"note": "Đã gọi kiểm tra"},
+    )
+    assert res_alert.status_code == 200
+    assert res_alert.json()["status"] == "CHECKED"
+
+    # Verify /api/events returns recorded events
+    events_res = client.get("/api/events", headers=caregiver_a)
+    assert events_res.status_code == 200
+    assert len(events_res.json()) >= 1
+
+
+def test_security_unauthenticated_and_operator_isolation(tmp_path):
+    client = make_client(tmp_path)
+    caregiver = login(client, "caregiver-a@example.test")
+    operator = login(client, "operator@example.test")
+
+    # Unauthenticated rejected
+    assert client.get("/api/schedules").status_code == 401
+    assert client.get("/api/doses").status_code == 401
+    assert client.get("/api/events").status_code == 401
+    assert client.get("/api/alerts").status_code == 401
+    assert client.post("/api/simulation/clock", json={"minutes": 1}).status_code == 401
+
+    # Caregiver cannot call operator-only simulation endpoints
+    assert client.post("/api/simulation/clock", headers=caregiver, json={"minutes": 1}).status_code == 403
+    assert client.post("/api/simulation/advance", headers=caregiver, json={"minutes": 1}).status_code == 403
+    assert client.post("/api/simulation/reset", headers=caregiver, json={}).status_code == 403
+    assert client.get("/api/simulation/state", headers=caregiver).status_code == 403
+
+    # Negative weight reading rejected
+    assert client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"slot": 1, "event_type": "WEIGHT_READING", "payload": {"weight_g": -1.5}},
+    ).status_code == 422
+
