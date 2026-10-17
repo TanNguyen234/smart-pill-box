@@ -61,13 +61,45 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF315C49), brightness: Brightness.light),
-          scaffoldBackgroundColor: const Color(0xFFF5F4EE),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF0D9488),
+            primary: const Color(0xFF0F766E),
+            primaryContainer: const Color(0xFFCCFBF1),
+            onPrimaryContainer: const Color(0xFF115E59),
+            surface: Colors.white,
+            brightness: Brightness.light,
+          ),
+          scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFFF8FAFC),
+            scrolledUnderElevation: 0,
+            elevation: 0,
+          ),
+          cardTheme: CardThemeData(
+            color: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
+            ),
+          ),
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            indicatorColor: const Color(0xFFCCFBF1),
+            elevation: 3,
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return const TextStyle(color: Color(0xFF0F766E), fontWeight: FontWeight.w700, fontSize: 12);
+              }
+              return const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w500, fontSize: 12);
+            }),
+          ),
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE4E5DD))),
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.8)),
           ),
         ),
         home: _account == null
@@ -76,6 +108,7 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                 account: _account!,
                 patients: _patients,
                 schedules: _schedules,
+                api: _api,
                 onCreateSchedule: (values) async {
                   await _api.createSchedule(
                     patientId: values['patient_id'] as int,
@@ -85,7 +118,19 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                   );
                   await _refreshSchedules();
                 },
+                onUpdateSchedule: (scheduleId, values) async {
+                  await _api.updateSchedule(
+                    scheduleId,
+                    medicationName: values['medication_name'] as String?,
+                    slot: values['slot'] as int?,
+                    time: values['time'] as String?,
+                    active: values['active'] as bool?,
+                  );
+                  await _refreshSchedules();
+                },
+                onRefreshData: _refreshSchedules,
                 onLogout: _logout,
               ),
       );
+
 }

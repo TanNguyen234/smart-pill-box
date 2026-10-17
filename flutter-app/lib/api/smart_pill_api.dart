@@ -2,14 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models.dart';
 
-const apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:8000',
-);
+part 'auth_api.dart';
+part 'schedules_api.dart';
+part 'events_api.dart';
+part 'alerts_api.dart';
+part 'doses_api.dart';
+
+String get apiBaseUrl {
+  const envUrl = String.fromEnvironment('API_BASE_URL');
+  if (envUrl.isNotEmpty) return envUrl;
+  if (kIsWeb) return 'http://localhost:8000';
+  return 'http://10.0.2.2:8000';
+}
 
 class ApiException implements Exception {
   const ApiException(this.message);
@@ -25,8 +34,16 @@ class SmartPillApi {
   final http.Client _client;
   String? token;
 
-  Future<dynamic> _request(String path, {String method = 'GET', Map<String, dynamic>? body}) async {
-    final uri = Uri.parse('$apiBaseUrl$path');
+  Future<dynamic> _request(
+    String path, {
+    String method = 'GET',
+    Map<String, String>? queryParameters,
+    Map<String, dynamic>? body,
+  }) async {
+    final baseUri = Uri.parse('$apiBaseUrl$path');
+    final uri = (queryParameters != null && queryParameters.isNotEmpty)
+        ? baseUri.replace(queryParameters: queryParameters)
+        : baseUri;
     try {
       final response = await _client
           .send(http.Request(method, uri)
@@ -51,37 +68,6 @@ class SmartPillApi {
     } on FormatException {
       throw const ApiException('Máy chủ trả dữ liệu không hợp lệ.');
     }
-  }
-
-  Future<String> login(String email, String password) async {
-    final data = await _request('/api/auth/login', method: 'POST', body: {'email': email, 'password': password}) as Map<String, dynamic>;
-    token = data['access_token'] as String;
-    return token!;
-  }
-
-  Future<Account> me() async => Account.fromJson(await _request('/api/me') as Map<String, dynamic>);
-
-  Future<List<Patient>> patients() async => (await _request('/api/patients') as List<dynamic>)
-      .map((item) => Patient.fromJson(item as Map<String, dynamic>))
-      .toList();
-
-  Future<List<MedicationSchedule>> schedules() async => (await _request('/api/schedules') as List<dynamic>)
-      .map((item) => MedicationSchedule.fromJson(item as Map<String, dynamic>))
-      .toList();
-
-  Future<void> createSchedule({
-    required int patientId,
-    required String medicationName,
-    required int slot,
-    required String time,
-  }) async {
-    await _request('/api/schedules', method: 'POST', body: {
-      'patient_id': patientId,
-      'medication_name': medicationName,
-      'slot': slot,
-      'time': time,
-      'active': true,
-    });
   }
 
   void clearSession() => token = null;

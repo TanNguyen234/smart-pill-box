@@ -50,19 +50,54 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    width: 62,
-                    height: 62,
+                    width: 68,
+                    height: 68,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: colors.primaryContainer, borderRadius: BorderRadius.circular(20)),
-                    child: Icon(Icons.medication_outlined, size: 32, color: colors.primary),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F766E), Color(0xFF14B8A6)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0D9488).withValues(alpha: 0.3),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.medication_rounded, size: 36, color: Colors.white),
                   ),
-                  const SizedBox(height: 30),
-                  Text('SMART PILL BOX', style: TextStyle(color: colors.primary, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  const Text('Chăm sóc bắt đầu\ntừ một lịch nhỏ.', style: TextStyle(fontSize: 31, height: 1.15, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 26),
+                  Text('SMART PILL BOX', style: TextStyle(color: colors.primary, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 10),
-                  Text('Đăng nhập để xem và quản lý lịch uống thuốc của người thân.', style: TextStyle(color: colors.onSurfaceVariant, height: 1.5)),
-                  const SizedBox(height: 28),
+                  const Text('Chăm sóc bắt đầu\ntừ một lịch nhỏ.', style: TextStyle(fontSize: 28, height: 1.2, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                  const SizedBox(height: 10),
+                  Text('Đăng nhập để xem và quản lý lịch uống thuốc của người thân.', style: TextStyle(color: colors.onSurfaceVariant, height: 1.5, fontSize: 14)),
+                  const SizedBox(height: 22),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.key_outlined, size: 16, color: Color(0xFF0D9488)),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Demo: caregiver-a@example.test • Pass: Password123!',
+                            style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   TextField(controller: _email, keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline))),
                   const SizedBox(height: 14),
                   TextField(controller: _password, obscureText: true, onSubmitted: (_) => _busy ? null : _submit(), decoration: const InputDecoration(labelText: 'Mật khẩu', prefixIcon: Icon(Icons.lock_outline))),
@@ -71,10 +106,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(_error!, style: TextStyle(color: colors.error), textAlign: TextAlign.center),
                   ],
                   const SizedBox(height: 22),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _submit,
-                    icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.arrow_forward),
-                    label: Text(_busy ? 'Đang đăng nhập…' : 'Đăng nhập'),
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF0F766E),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: _busy ? null : _submit,
+                      icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.arrow_forward),
+                      label: Text(_busy ? 'Đang đăng nhập…' : 'Đăng nhập', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    ),
                   ),
                   const SizedBox(height: 18),
                   Text('Dữ liệu demo · Token chỉ lưu trong phiên mở ứng dụng', textAlign: TextAlign.center, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
