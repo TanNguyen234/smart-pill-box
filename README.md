@@ -1,21 +1,21 @@
-# 🏥 Smart Pill Box — Hệ Thống Hộp Thuốc Thông Minh IoT
+# Smart Pill Box — Hệ Thống Hộp Thuốc Thông Minh IoT
 
 > **Dự án tích hợp toàn diện:** Backend FastAPI + Web Simulator phần cứng 3D + Ứng dụng di động Flutter dành cho người chăm sóc. Hỗ trợ theo dõi lịch uống thuốc thời gian thực, đồng hồ mô phỏng gia tốc, cảm biến trọng lượng chống rung nhiễu và quy trình cảnh báo đa tầng.
 
 ---
 
-## 📌 Mục lục
-1. [Giới thiệu tổng quan](#-giới-thiệu-tổng-quan)
-2. [Kiến trúc hệ thống & Công nghệ](#-kiến-trúc-hệ-thống--công-nghệ)
-3. [Đối chiếu 5 thành viên & Phân công trách nhiệm](#-đối-chiếu-5-thành-viên--phân-công-trách-nhiệm)
-4. [Kịch bản mô phỏng chuẩn y tế (Timeline Demo)](#-kịch-bản-mô-phỏng-chuẩn-y-tế-timeline-demo)
-5. [Đặc tả API & Quy chuẩn kỹ thuật](#-đặc-tả-api--quy-chuẩn-kỹ-thuật)
-6. [Hướng dẫn cài đặt & Chạy ứng dụng](#-hướng-dẫn-cài-đặt--chạy-ứng-dụng)
-7. [Bằng chứng kiểm thử & Đảm bảo chất lượng (Quality Gates)](#-bằng-chứng-kiểm-thử--đảm-bảo-chất-lượng-quality-gates)
+## Mục lục
+1. [Giới thiệu tổng quan](#gioi-thieu-tong-quan)
+2. [Kiến trúc hệ thống & Công nghệ](#kien-truc-he-thong--cong-nghe)
+3. [Đối chiếu 5 thành viên & Phân công trách nhiệm](#doi-chieu-5-thanh-vien--phan-cong-trach-nhiem)
+4. [Kịch bản mô phỏng chuẩn y tế (Timeline Demo)](#kich-ban-mo-phong-chuan-y-te-timeline-demo)
+5. [Đặc tả API & Quy chuẩn kỹ thuật](#dac-ta-api--quy-chuan-ky-thuat)
+6. [Hướng dẫn cài đặt & Chạy ứng dụng](#huong-dan-cai-dat--chay-ung-dung)
+7. [Bằng chứng kiểm thử & Đảm bảo chất lượng (Quality Gates)](#bang-chung-kiem-thu--dam-bao-chat-luong-quality-gates)
 
 ---
 
-## 🌟 Giới thiệu tổng quan
+## Giới thiệu tổng quan
 
 **Smart Pill Box** giải quyết bài toán quên uống thuốc, uống sai liều hoặc quá hạn ở người cao tuổi và bệnh nhân điều trị ngoại trú. Hệ thống kết nối chặt chẽ giữa 3 phân hệ:
 
@@ -30,7 +30,7 @@
 
 ---
 
-## 🏗 Kiến trúc hệ thống & Công nghệ
+## Kiến trúc hệ thống & Công nghệ
 
 ```mermaid
 flowchart TD
@@ -77,7 +77,7 @@ flowchart TD
 
 ---
 
-## 👥 Đối chiếu 5 thành viên & Phân công trách nhiệm
+## Đối chiếu 5 thành viên & Phân công trách nhiệm
 
 Hệ thống đã hợp nhất toàn bộ mã nguồn của 5 thành viên, giải quyết triệt để tất cả các lỗi được chỉ ra trong báo cáo nghiệm thu độc lập:
 
@@ -91,7 +91,7 @@ Hệ thống đã hợp nhất toàn bộ mã nguồn của 5 thành viên, gi�
 
 ---
 
-## ⏱ Kịch bản mô phỏng chuẩn y tế (Timeline Demo)
+## Kịch bản mô phỏng chuẩn y tế (Timeline Demo)
 
 Kịch bản chuẩn được kiểm thử tự động từ 07:59 đến khi hoàn tất uống thuốc:
 
@@ -125,7 +125,7 @@ Kịch bản chuẩn được kiểm thử tự động từ 07:59 đến khi ho
 
 ---
 
-## 📡 Đặc tả API & Quy chuẩn kỹ thuật
+## Đặc tả API & Quy chuẩn kỹ thuật
 
 ### 1. Bảng Endpoint chính
 | Phương thức | Đường dẫn API | Phân quyền | Mô tả chức năng |
@@ -149,14 +149,19 @@ Kịch bản chuẩn được kiểm thử tự động từ 07:59 đến khi ho
 
 ---
 
-## 🚀 Hướng dẫn cài đặt & Chạy ứng dụng
+## Hướng dẫn cài đặt & Chạy ứng dụng
 
 ### Yêu cầu hệ thống:
 * **Python 3.12+**
 * **Node.js 18+** & npm
 * **Flutter SDK 3.x+**
 
-### Bước 1: Khởi tạo Backend (Cửa sổ Terminal 1)
+### Khởi động nhanh (Khuyến nghị trên Windows):
+Chạy tệp `start_all.bat` ở thư mục gốc để khởi động tự động toàn bộ 3 phân hệ (Backend :8000, Web Simulator :5173, Flutter Web :8080).
+
+### Hoặc khởi động thủ công từng phân hệ:
+
+#### Bước 1: Khởi tạo Backend (Cửa sổ Terminal 1)
 ```powershell
 cd backend
 python -m venv .venv
@@ -168,7 +173,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 > API Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-### Bước 2: Khởi động Web Simulator (Cửa sổ Terminal 2)
+#### Bước 2: Khởi động Web Simulator (Cửa sổ Terminal 2)
 ```powershell
 cd web-simulator
 npm install
@@ -176,7 +181,7 @@ npm run dev
 ```
 > Truy cập trình duyệt: [http://localhost:5173](http://localhost:5173)
 
-### Bước 3: Khởi động Flutter Mobile App (Cửa sổ Terminal 3)
+#### Bước 3: Khởi động Flutter Mobile App (Cửa sổ Terminal 3)
 ```powershell
 cd flutter-app
 flutter pub get
@@ -187,18 +192,18 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
 ```
 > Truy cập bản Flutter Web: [http://localhost:8080](http://localhost:8080)
 
-### 🔑 Tài khoản Demo sẵn sàng sử dụng:
+### Tài khoản Demo sẵn sàng sử dụng:
 | Vai trò | Email đăng nhập | Mật khẩu mặc định | Ghi chú |
 | :--- | :--- | :--- | :--- |
 | **Operator** | `operator@example.test` | `Password123!` | Dùng cho Web Simulator (Bàn điều khiển hộp thuốc). |
 | **Caregiver A** | `caregiver-a@example.test` | `Password123!` | Người thân chăm sóc Bệnh nhân A (SIM-001). |
 | **Caregiver B** | `caregiver-b@example.test` | `Password123!` | Người thân chăm sóc Bệnh nhân B (Cách ly dữ liệu). |
 
-*(Cả trên Web Simulator và Mobile App đều có nút "🔑 Điền nhanh" giúp đăng nhập 1 chạm tiện dụng)*.
+*(Cả trên Web Simulator và Mobile App đều có nút "Điền nhanh" hỗ trợ đăng nhập 1 chạm tiện dụng).*
 
 ---
 
-## ✅ Bằng chứng kiểm thử & Đảm bảo chất lượng (Quality Gates)
+## Bằng chứng kiểm thử & Đảm bảo chất lượng (Quality Gates)
 
 Toàn bộ hệ sinh thái Smart Pill Box được kiểm soát nghiêm ngặt qua 4 lớp kiểm thử tự động:
 
@@ -206,11 +211,11 @@ Toàn bộ hệ sinh thái Smart Pill Box được kiểm soát nghiêm ngặt q
 ========================================================================================
                             QUALITY GATES VERIFICATION SUMMARY
 ========================================================================================
- [✓] Backend Pytest Suite               : 8/8 PASSED     (100% logic, bảo mật & múi giờ)
- [✓] Flutter Widget Tests               : 2/2 PASSED     (Đầy đủ 5 tabs & assertions)
- [✓] Flutter Static Analysis            : 0 ISSUES       (Hoàn toàn sạch cảnh báo/linter)
- [✓] Web Simulator Production Build     : PASSED         (tsc + vite build trong 503ms)
- [✓] Chrome DevTools Protocol Audit (CDP): 12/12 PASSED   (Console sạch, 0 lỗi mạng)
+ [PASS] Backend Pytest Suite               : 8/8 PASSED     (100% logic, bảo mật & múi giờ)
+ [PASS] Flutter Widget Tests               : 2/2 PASSED     (Đầy đủ 5 tabs & assertions)
+ [PASS] Flutter Static Analysis            : 0 ISSUES       (Hoàn toàn sạch cảnh báo/linter)
+ [PASS] Web Simulator Production Build     : PASSED         (tsc + vite build trong 503ms)
+ [PASS] Chrome DevTools Protocol Audit (CDP): 12/12 PASSED   (Console sạch, 0 lỗi mạng)
 ========================================================================================
 ```
 
