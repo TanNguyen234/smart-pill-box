@@ -133,3 +133,24 @@ def test_realtime_same_minute_retries_do_not_duplicate_reminders(tmp_path):
         tick_realtime(client.app, now=when.replace(hour=8, minute=0, second=seconds))
     with client.app.state.session_factory() as db:
         assert db.scalar(select(func.count()).select_from(DoseOccurrence)) == 1
+
+
+def test_lifespan_worker_triggers_a_reminder_without_any_advance_request(tmp_path):
+    import time
+    client = client_with_seed(tmp_path)
+    operator = login(client, "operator@example.test")
+    now = datetime(2026, 10, 20, 7, 59, tzinfo=VN_TZ)
+    client.app.state.now_provider = lambda: now
+    assert client.post("/api/simulation/mode", headers=operator, json={"clock_mode": "REALTIME"}).status_code == 200
+    # No calls to /api/simulation/advance or explicit tick_realtime.
+    client.app.state.now_provider = lambda: now.replace(hour=8, minute=0, second=5)
+    with TestClient(client.app) as running:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            state = running.get("/api/simulation/state", headers=operator).json()
+            if state["active_occurrences"]:
+                break
+            time.sleep(0.05)
+        assert state["active_occurrences"][0]["status"] == "pending"
+        with client.app.state.session_factory() as db:
+            assert db.scalar(select(func.count()).select_from(DoseOccurrence)) == 1
