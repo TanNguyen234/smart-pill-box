@@ -651,7 +651,10 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                     state.virtual_clock = state.simulation_clock or DEFAULT_SIMULATION_CLOCK
                 state.clock_mode = payload.clock_mode
                 db.commit()
-            if state.clock_mode == "REALTIME":
+            if payload.clock_mode == "REALTIME":
+                # Drop the reader transaction before the worker opens a writer
+                # transaction on the same SQLite file.
+                db.rollback()
                 tick_realtime(request.app)
                 db.expire_all()
                 state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
@@ -667,7 +670,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         return state_json(db, state)
 
     @app.post("/api/simulation/events")
-    def simulation_event(payload: EventInput, user: User = Depends(operator_only), request: Request, db: Session = Depends(get_db)):
+    def simulation_event(payload: EventInput, request: Request, user: User = Depends(operator_only), db: Session = Depends(get_db)):
         with request.app.state.clock_lock:
             state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
             if state is None:
@@ -806,9 +809,9 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     def advance_simulation_clock(
 
         payload: ClockAdvanceInput,
+        request: Request,
         user: User = Depends(operator_only),
         db: Session = Depends(get_db),
-        request: Request,
     ):
         with request.app.state.clock_lock:
             state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
@@ -844,9 +847,9 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     @app.post("/api/simulation/reset")
     def reset_simulation(
         payload: SimulationResetInput,
+        request: Request,
         user: User = Depends(operator_only),
         db: Session = Depends(get_db),
-        request: Request,
     ):
         with request.app.state.clock_lock:
             if not payload.confirm and payload.confirmation != "RESET_DEMO":
