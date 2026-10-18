@@ -128,7 +128,7 @@ class ClockAdvanceInput(BaseModel):
 
 
 class SimulationResetInput(BaseModel):
-    confirm: bool = True
+    confirm: bool = False
     confirmation: str | None = None
     event_uuid: UUID = Field(default_factory=uuid4)
 

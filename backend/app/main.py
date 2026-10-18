@@ -1,7 +1,8 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date as calendar_date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
+import math
 
 import jwt
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.database import Base, make_engine, make_session_factory
+from app.schema_migrations import upgrade_sqlite_schema
 from app.models import Alert, DeviceEvent, DoseOccurrence, MedicationSchedule, Patient, SimulationState, User
 from app.schemas import (
     AlertOutput,
@@ -123,6 +125,7 @@ def record_device_event(
         DeviceEvent(
             event_uuid=event_uuid,
             event_type=event_type,
+            device_id="SIM-001",
             slot=slot,
             occurrence_id=occurrence_id,
             patient_id=patient_id,
@@ -146,11 +149,15 @@ def schedule_json(schedule: MedicationSchedule) -> dict:
 
 def state_json(db: Session, state: SimulationState, idempotent: bool = False) -> dict:
     active_schedules = db.scalars(
-        select(MedicationSchedule).where(MedicationSchedule.active.is_(True)).order_by(MedicationSchedule.time)
+        select(MedicationSchedule).where(
+            MedicationSchedule.active.is_(True),
+            MedicationSchedule.patient_id == state.patient_id,
+        ).order_by(MedicationSchedule.time)
     ).all()
     occurrence_rows = db.execute(
         select(DoseOccurrence, MedicationSchedule)
         .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+        .where(MedicationSchedule.patient_id == state.patient_id)
         .order_by(DoseOccurrence.scheduled_at.desc(), DoseOccurrence.id.desc())
     ).all()
     active_by_slot: dict[int, tuple[DoseOccurrence, MedicationSchedule]] = {}
@@ -233,7 +240,10 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
                 milestones.append(diff_tomorrow)
     next_milestone = min(milestones) if milestones else 1
 
-    recent_events = db.scalars(select(DeviceEvent).order_by(DeviceEvent.id.desc()).limit(30)).all()
+    recent_events = db.scalars(
+        select(DeviceEvent).where(DeviceEvent.patient_id == state.patient_id)
+        .order_by(DeviceEvent.id.desc()).limit(30)
+    ).all()
     return {
         "device_id": state.device_id,
         "virtual_clock": state.virtual_clock,
@@ -259,10 +269,12 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
     }
 
 
-def process_clock_minute(db: Session, point: datetime) -> None:
+def process_clock_minute(db: Session, point: datetime, patient_id: int) -> None:
     wall_time = local_wall_time(point)
     schedules = db.scalars(
-        select(MedicationSchedule).where(MedicationSchedule.active.is_(True))
+        select(MedicationSchedule).where(
+            MedicationSchedule.active.is_(True), MedicationSchedule.patient_id == patient_id
+        )
     ).all()
     for schedule in schedules:
         if schedule.time != point.strftime("%H:%M"):
@@ -300,6 +312,7 @@ def process_clock_minute(db: Session, point: datetime) -> None:
         .where(
             DoseOccurrence.scheduled_at <= wall_time,
             DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
+            MedicationSchedule.patient_id == patient_id,
         )
     ).all()
     for occurrence, schedule in due_rows:
@@ -366,6 +379,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             path.parent.mkdir(parents=True, exist_ok=True)
     engine = make_engine(database_url)
     Base.metadata.create_all(engine)
+    upgrade_sqlite_schema(engine)
     app = FastAPI(title="Smart Pill Box API", version="0.1.0")
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
@@ -467,7 +481,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     @app.get("/api/doses", response_model=list[DoseOutput])
     def doses(
         patient_id: int | None = None,
-        date: str | None = None,
+        date: calendar_date | None = None,
         user: User = Depends(caregiver_only),
         db: Session = Depends(get_db),
     ):
@@ -485,16 +499,16 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             return []
 
         query = select(DoseOccurrence).where(DoseOccurrence.schedule_id.in_(sched_ids))
-        if date:
-            try:
-                dt_start = datetime.fromisoformat(f"{date}T00:00:00")
-                dt_end = datetime.fromisoformat(f"{date}T23:59:59")
-                query = query.where(
-                    DoseOccurrence.scheduled_at >= dt_start,
-                    DoseOccurrence.scheduled_at <= dt_end,
-                )
-            except ValueError:
-                pass
+        # The Flutter "Hôm nay" screen follows the virtual clock, not the host computer date.
+        demo_state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+        target_date = date or (parse_virtual_clock(demo_state.virtual_clock).date() if demo_state else None)
+        if target_date is not None:
+            dt_start = datetime.combine(target_date, datetime.min.time())
+            dt_end = dt_start + timedelta(days=1)
+            query = query.where(
+                DoseOccurrence.scheduled_at >= dt_start,
+                DoseOccurrence.scheduled_at < dt_end,
+            )
         rows = db.scalars(query.order_by(DoseOccurrence.scheduled_at.desc(), DoseOccurrence.id.desc())).all()
         return rows
 
@@ -513,21 +527,18 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         if not user_patient_ids:
             return []
 
-        query = select(DeviceEvent).where(
-            (DeviceEvent.patient_id.in_(user_patient_ids)) | (DeviceEvent.patient_id.is_(None))
-        )
+        # Never expose unassigned/global operator events to every caregiver.
+        query = select(DeviceEvent).where(DeviceEvent.patient_id.in_(user_patient_ids))
         if slot is not None:
             query = query.where(DeviceEvent.slot == slot)
-        if date:
-            try:
-                dt_start = datetime.fromisoformat(f"{date}T00:00:00")
-                dt_end = datetime.fromisoformat(f"{date}T23:59:59")
-                query = query.where(
-                    DeviceEvent.created_at >= dt_start,
-                    DeviceEvent.created_at <= dt_end,
-                )
-            except ValueError:
-                pass
+        if date is not None:
+            # User-facing history is based on the simulated occurrence time.
+            dt_start = datetime.combine(date, datetime.min.time())
+            dt_end = dt_start + timedelta(days=1)
+            query = query.where(
+                DeviceEvent.occurred_at >= dt_start,
+                DeviceEvent.occurred_at < dt_end,
+            )
         rows = db.scalars(query.order_by(DeviceEvent.id.desc())).all()
         return rows
 
@@ -566,10 +577,9 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         elif target_status == "PENDING":
             alert.resolved_at = None
 
-        if note:
-            alert.note = note.strip()
-            if not alert.message.endswith(f" (Ghi chú: {alert.note})"):
-                alert.message += f" (Ghi chú: {alert.note})"
+        if note is not None:
+            alert.note = note.strip() or None
+        # Keep the original warning message immutable; notes are a separate field.
 
         db.commit()
         db.refresh(alert)
@@ -610,17 +620,23 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
         target_slot = payload.resolved_slot
         event_uuid = str(payload.event_uuid)
+        try:
+            weight_reading = payload.resolved_weight_g
+            requested_occurrence = payload.resolved_occurrence_id
+        except (TypeError, ValueError, OverflowError):
+            raise HTTPException(status_code=422, detail="Dữ liệu cảm biến hoặc mã lần nhắc không hợp lệ")
+        if weight_reading is not None and not math.isfinite(weight_reading):
+            raise HTTPException(status_code=422, detail="Trọng lượng phải là số hữu hạn")
+        signature = {
+            "slot": target_slot,
+            "event_type": payload.event_type,
+            "weight_g": weight_reading,
+            "occurrence_id": requested_occurrence,
+            "payload": payload.payload or {},
+        }
         existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
         if existing is not None:
-            same_slot = (existing.slot == target_slot) or (existing.payload.get("slot") == target_slot)
-            same_type = existing.event_type == payload.event_type
-            same_weight = True
-            if payload.resolved_weight_g is not None:
-                existing_w = existing.payload.get("weight_grams") or existing.payload.get("weight_g")
-                if existing_w is not None and abs(float(existing_w) - payload.resolved_weight_g) > 0.001:
-                    same_weight = False
-            same_content = same_type and same_slot and same_weight
-            if not same_content:
+            if existing.payload.get("request_signature") != signature:
                 raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
             return state_json(db, state, idempotent=True)
 
@@ -629,7 +645,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         if compartment is None:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy ngăn {target_slot}")
         occurrence_id = None
-        extra_payload = {}
+        extra_payload = {"request_signature": signature}
 
         if payload.event_type in {"LID_OPENED", "LID_CLOSED"}:
             new_open = payload.event_type == "LID_OPENED"
@@ -638,7 +654,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 raise HTTPException(status_code=409, detail=f"Nắp ngăn {target_slot} {action}")
             compartment["lid_open"] = new_open
         elif payload.event_type in {"WEIGHT_READING", "WEIGHT_SAMPLE", "WEIGHT_CHANGED"}:
-            new_weight = payload.resolved_weight_g
+            new_weight = weight_reading
             if new_weight is None:
                 raise HTTPException(status_code=422, detail="Cần cung cấp trọng lượng weight_g")
             if new_weight < 0:
@@ -664,12 +680,13 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             compartment["weight_grams"] = round(max(0.0, compartment["weight_grams"] - 0.5), 1)
         elif payload.event_type in {"DOSE_CONFIRMED", "CONFIRM_PRESSED", "CONFIRMED"}:
             now = local_wall_time(parse_virtual_clock(state.virtual_clock))
-            req_occ_id = payload.resolved_occurrence_id
+            req_occ_id = requested_occurrence
             query = (
                 select(DoseOccurrence)
                 .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
                 .where(
                     MedicationSchedule.slot == target_slot,
+                    MedicationSchedule.patient_id == state.patient_id,
                     DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
                     DoseOccurrence.scheduled_at <= now,
                 )
@@ -692,6 +709,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
                 .where(
                     MedicationSchedule.slot == target_slot,
+                    MedicationSchedule.patient_id == state.patient_id,
                     DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
                     DoseOccurrence.scheduled_at <= now_wall,
                 )
@@ -747,7 +765,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             return state_json(db, state, idempotent=True)
         current = parse_virtual_clock(state.virtual_clock)
         for minute in range(1, payload.minutes + 1):
-            process_clock_minute(db, current + timedelta(minutes=minute))
+            process_clock_minute(db, current + timedelta(minutes=minute), state.patient_id)
         state.virtual_clock = (current + timedelta(minutes=payload.minutes)).isoformat(timespec="seconds")
         state.updated_at = datetime.now(timezone.utc)
         record_device_event(
@@ -756,6 +774,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             event_type="CLOCK_ADVANCED",
             slot=None,
             virtual_time=state.virtual_clock,
+            patient_id=state.patient_id,
             extra_payload={"minutes": payload.minutes, "previous_virtual_time": iso_vietnam(current)},
         )
         db.commit()
@@ -780,9 +799,16 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
             return state_json(db, state, idempotent=True)
         previous_clock = state.virtual_clock
-        db.execute(delete(Alert))
-        db.execute(delete(DeviceEvent))
-        db.execute(delete(DoseOccurrence))
+        # Only reset the data owned by this demo device's patient.
+        demo_schedule_ids = select(MedicationSchedule.id).where(
+            MedicationSchedule.patient_id == state.patient_id
+        )
+        demo_occurrence_ids = select(DoseOccurrence.id).where(
+            DoseOccurrence.schedule_id.in_(demo_schedule_ids)
+        )
+        db.execute(delete(Alert).where(Alert.patient_id == state.patient_id))
+        db.execute(delete(DeviceEvent).where(DeviceEvent.patient_id == state.patient_id))
+        db.execute(delete(DoseOccurrence).where(DoseOccurrence.id.in_(demo_occurrence_ids)))
         state.virtual_clock = DEFAULT_SIMULATION_CLOCK
         state.compartments = default_compartments()
         state.updated_at = datetime.now(timezone.utc)
@@ -791,6 +817,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
             event_uuid=event_uuid,
             event_type="SIMULATION_RESET",
             slot=None,
+            patient_id=state.patient_id,
             virtual_time=state.virtual_clock,
             extra_payload={"previous_virtual_time": previous_clock},
         )
