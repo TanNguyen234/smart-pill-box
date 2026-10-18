@@ -3,6 +3,9 @@ from datetime import date as calendar_date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 import math
+import asyncio
+import threading
+from contextlib import asynccontextmanager
 
 import jwt
 from dotenv import load_dotenv
@@ -15,12 +18,14 @@ from sqlalchemy.orm import Session
 
 from app.database import Base, make_engine, make_session_factory
 from app.schema_migrations import upgrade_sqlite_schema
+from app.realtime import realtime_clock_worker, tick_realtime
 from app.models import Alert, DeviceEvent, DoseOccurrence, MedicationSchedule, Patient, SimulationState, User
 from app.schemas import (
     AlertOutput,
     AlertPatchInput,
     AlertResolveInput,
     ClockAdvanceInput,
+    ClockModeInput,
     DeviceEventOutput,
     DoseOutput,
     EventInput,
@@ -157,7 +162,7 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
     occurrence_rows = db.execute(
         select(DoseOccurrence, MedicationSchedule)
         .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
-        .where(MedicationSchedule.patient_id == state.patient_id)
+        .where(MedicationSchedule.patient_id == state.patient_id, DoseOccurrence.clock_mode == state.clock_mode)
         .order_by(DoseOccurrence.scheduled_at.desc(), DoseOccurrence.id.desc())
     ).all()
     active_by_slot: dict[int, tuple[DoseOccurrence, MedicationSchedule]] = {}
@@ -247,6 +252,7 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
     return {
         "device_id": state.device_id,
         "virtual_clock": state.virtual_clock,
+        "clock_mode": state.clock_mode,
         "compartments": compartments,
         "next_milestone_minutes": next_milestone,
         "active_schedules": [
@@ -269,7 +275,7 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
     }
 
 
-def process_clock_minute(db: Session, point: datetime, patient_id: int) -> None:
+def process_clock_minute(db: Session, point: datetime, patient_id: int, clock_mode: str = "SIMULATION") -> None:
     wall_time = local_wall_time(point)
     schedules = db.scalars(
         select(MedicationSchedule).where(
@@ -292,6 +298,7 @@ def process_clock_minute(db: Session, point: datetime, patient_id: int) -> None:
                 deadline_at=wall_time + timedelta(minutes=5),
                 reminder_count=1,
                 status="pending",
+                clock_mode=clock_mode,
             )
             db.add(occurrence)
             db.flush()
@@ -312,6 +319,7 @@ def process_clock_minute(db: Session, point: datetime, patient_id: int) -> None:
         .where(
             DoseOccurrence.scheduled_at <= wall_time,
             DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
+            DoseOccurrence.clock_mode == clock_mode,
             MedicationSchedule.patient_id == patient_id,
         )
     ).all()
@@ -364,6 +372,20 @@ def process_clock_minute(db: Session, point: datetime, patient_id: int) -> None:
 
 
 
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    worker = asyncio.create_task(realtime_clock_worker(app), name="smart-pill-realtime-scheduler")
+    app.state.realtime_worker = worker
+    try:
+        yield
+    finally:
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
+
+
 def create_app(database_url: str | None = None, jwt_secret: str | None = None) -> FastAPI:
     database_url = database_url or os.getenv("DATABASE_URL", "sqlite:///data/smartpill.sqlite3")
     jwt_secret = jwt_secret or os.getenv("JWT_SECRET")
@@ -380,10 +402,12 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     engine = make_engine(database_url)
     Base.metadata.create_all(engine)
     upgrade_sqlite_schema(engine)
-    app = FastAPI(title="Smart Pill Box API", version="0.1.0")
+    app = FastAPI(title="Smart Pill Box API", version="0.2.0", lifespan=app_lifespan)
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
     app.state.jwt_secret = jwt_secret
+    app.state.clock_lock = threading.RLock()
+    app.state.now_provider = lambda: datetime.now(VIETNAM_TZ)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -604,6 +628,35 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         return _resolve_alert_logic(alert_id, payload.note, "CHECKED", user, db)
 
 
+
+    @app.post("/api/simulation/mode")
+    def change_clock_mode(
+        payload: ClockModeInput,
+        request: Request,
+        user: User = Depends(operator_only),
+        db: Session = Depends(get_db),
+    ):
+        with request.app.state.clock_lock:
+            state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+            if state is None:
+                raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+            if state.clock_mode != payload.clock_mode:
+                if payload.clock_mode == "REALTIME":
+                    state.simulation_clock = state.virtual_clock
+                    now = request.app.state.now_provider().astimezone(VIETNAM_TZ)
+                    state.virtual_clock = iso_vietnam(
+                        now.replace(second=0, microsecond=0) - timedelta(minutes=1)
+                    )
+                else:
+                    state.virtual_clock = state.simulation_clock or DEFAULT_SIMULATION_CLOCK
+                state.clock_mode = payload.clock_mode
+                db.commit()
+            if state.clock_mode == "REALTIME":
+                tick_realtime(request.app)
+                db.expire_all()
+                state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+            return state_json(db, state)
+
     @app.get("/api/simulation/state")
     @app.get("/api/simulation/clock/state")
     def simulation_state(user: User = Depends(operator_only), db: Session = Depends(get_db)):
@@ -614,134 +667,137 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         return state_json(db, state)
 
     @app.post("/api/simulation/events")
-    def simulation_event(payload: EventInput, user: User = Depends(operator_only), db: Session = Depends(get_db)):
-        state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
-        if state is None:
-            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
-        target_slot = payload.resolved_slot
-        event_uuid = str(payload.event_uuid)
-        try:
-            weight_reading = payload.resolved_weight_g
-            requested_occurrence = payload.resolved_occurrence_id
-        except (TypeError, ValueError, OverflowError):
-            raise HTTPException(status_code=422, detail="Dữ liệu cảm biến hoặc mã lần nhắc không hợp lệ")
-        if weight_reading is not None and not math.isfinite(weight_reading):
-            raise HTTPException(status_code=422, detail="Trọng lượng phải là số hữu hạn")
-        signature = {
-            "slot": target_slot,
-            "event_type": payload.event_type,
-            "weight_g": weight_reading,
-            "occurrence_id": requested_occurrence,
-            "payload": payload.payload or {},
-        }
-        existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
-        if existing is not None:
-            if existing.payload.get("request_signature") != signature:
-                raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
-            return state_json(db, state, idempotent=True)
+    def simulation_event(payload: EventInput, user: User = Depends(operator_only), request: Request, db: Session = Depends(get_db)):
+        with request.app.state.clock_lock:
+            state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+            if state is None:
+                raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+            target_slot = payload.resolved_slot
+            event_uuid = str(payload.event_uuid)
+            try:
+                weight_reading = payload.resolved_weight_g
+                requested_occurrence = payload.resolved_occurrence_id
+            except (TypeError, ValueError, OverflowError):
+                raise HTTPException(status_code=422, detail="Dữ liệu cảm biến hoặc mã lần nhắc không hợp lệ")
+            if weight_reading is not None and not math.isfinite(weight_reading):
+                raise HTTPException(status_code=422, detail="Trọng lượng phải là số hữu hạn")
+            signature = {
+                "slot": target_slot,
+                "event_type": payload.event_type,
+                "weight_g": weight_reading,
+                "occurrence_id": requested_occurrence,
+                "payload": payload.payload or {},
+            }
+            existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
+            if existing is not None:
+                if existing.payload.get("request_signature") != signature:
+                    raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
+                return state_json(db, state, idempotent=True)
 
-        compartments = [dict(item) for item in state.compartments]
-        compartment = next((item for item in compartments if item["slot"] == target_slot), None)
-        if compartment is None:
-            raise HTTPException(status_code=404, detail=f"Không tìm thấy ngăn {target_slot}")
-        occurrence_id = None
-        extra_payload = {"request_signature": signature}
+            compartments = [dict(item) for item in state.compartments]
+            compartment = next((item for item in compartments if item["slot"] == target_slot), None)
+            if compartment is None:
+                raise HTTPException(status_code=404, detail=f"Không tìm thấy ngăn {target_slot}")
+            occurrence_id = None
+            extra_payload = {"request_signature": signature}
 
-        if payload.event_type in {"LID_OPENED", "LID_CLOSED"}:
-            new_open = payload.event_type == "LID_OPENED"
-            if compartment["lid_open"] == new_open:
-                action = "đã mở" if new_open else "đã đóng"
-                raise HTTPException(status_code=409, detail=f"Nắp ngăn {target_slot} {action}")
-            compartment["lid_open"] = new_open
-        elif payload.event_type in {"WEIGHT_READING", "WEIGHT_SAMPLE", "WEIGHT_CHANGED"}:
-            new_weight = weight_reading
-            if new_weight is None:
-                raise HTTPException(status_code=422, detail="Cần cung cấp trọng lượng weight_g")
-            if new_weight < 0:
-                raise HTTPException(status_code=422, detail="Trọng lượng không được âm")
-            if not compartment["lid_open"]:
-                raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi đọc tải trọng")
-            current_weight = float(compartment["weight_grams"])
-            drop = round(current_weight - new_weight, 2)
-            extra_payload["weight_g"] = new_weight
-            if drop >= 0.3:
+            if payload.event_type in {"LID_OPENED", "LID_CLOSED"}:
+                new_open = payload.event_type == "LID_OPENED"
+                if compartment["lid_open"] == new_open:
+                    action = "đã mở" if new_open else "đã đóng"
+                    raise HTTPException(status_code=409, detail=f"Nắp ngăn {target_slot} {action}")
+                compartment["lid_open"] = new_open
+            elif payload.event_type in {"WEIGHT_READING", "WEIGHT_SAMPLE", "WEIGHT_CHANGED"}:
+                new_weight = weight_reading
+                if new_weight is None:
+                    raise HTTPException(status_code=422, detail="Cần cung cấp trọng lượng weight_g")
+                if new_weight < 0:
+                    raise HTTPException(status_code=422, detail="Trọng lượng không được âm")
+                if not compartment["lid_open"]:
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi đọc tải trọng")
+                current_weight = float(compartment["weight_grams"])
+                drop = round(current_weight - new_weight, 2)
+                extra_payload["weight_g"] = new_weight
+                if drop >= 0.3:
+                    if compartment["pill_count"] <= 0:
+                        raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
+                    compartment["pill_count"] -= 1
+                    compartment["weight_grams"] = round(max(0.0, new_weight), 1)
+                else:
+                    compartment["weight_grams"] = round(max(0.0, new_weight), 1)
+            elif payload.event_type in {"PILL_DISPENSED", "PILL_REMOVED"}:
+                if not compartment["lid_open"]:
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy viên")
                 if compartment["pill_count"] <= 0:
                     raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
                 compartment["pill_count"] -= 1
-                compartment["weight_grams"] = round(max(0.0, new_weight), 1)
-            else:
-                compartment["weight_grams"] = round(max(0.0, new_weight), 1)
-        elif payload.event_type in {"PILL_DISPENSED", "PILL_REMOVED"}:
-            if not compartment["lid_open"]:
-                raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy viên")
-            if compartment["pill_count"] <= 0:
-                raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
-            compartment["pill_count"] -= 1
-            compartment["weight_grams"] = round(max(0.0, compartment["weight_grams"] - 0.5), 1)
-        elif payload.event_type in {"DOSE_CONFIRMED", "CONFIRM_PRESSED", "CONFIRMED"}:
-            now = local_wall_time(parse_virtual_clock(state.virtual_clock))
-            req_occ_id = requested_occurrence
-            query = (
-                select(DoseOccurrence)
-                .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
-                .where(
-                    MedicationSchedule.slot == target_slot,
-                    MedicationSchedule.patient_id == state.patient_id,
-                    DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
-                    DoseOccurrence.scheduled_at <= now,
+                compartment["weight_grams"] = round(max(0.0, compartment["weight_grams"] - 0.5), 1)
+            elif payload.event_type in {"DOSE_CONFIRMED", "CONFIRM_PRESSED", "CONFIRMED"}:
+                now = local_wall_time(parse_virtual_clock(state.virtual_clock))
+                req_occ_id = requested_occurrence
+                query = (
+                    select(DoseOccurrence)
+                    .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+                    .where(
+                        MedicationSchedule.slot == target_slot,
+                        MedicationSchedule.patient_id == state.patient_id,
+                        DoseOccurrence.clock_mode == state.clock_mode,
+                        DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
+                        DoseOccurrence.scheduled_at <= now,
+                    )
                 )
-            )
-            if req_occ_id is not None:
-                query = query.where(DoseOccurrence.id == req_occ_id)
-            due = db.scalar(
-                query.order_by(DoseOccurrence.scheduled_at.asc(), DoseOccurrence.id.asc()).limit(1)
-            )
-            if due is None:
-                raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} hiện không có lần nhắc cần xác nhận")
-            occurrence_id = due.id
-            due.confirmed_at = now
-            due.status = "confirmed_late" if now - due.scheduled_at >= timedelta(minutes=5) else "confirmed_on_time"
-
-        now_wall = local_wall_time(parse_virtual_clock(state.virtual_clock))
-        if occurrence_id is None:
-            active_occ = db.scalar(
-                select(DoseOccurrence)
-                .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
-                .where(
-                    MedicationSchedule.slot == target_slot,
-                    MedicationSchedule.patient_id == state.patient_id,
-                    DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
-                    DoseOccurrence.scheduled_at <= now_wall,
+                if req_occ_id is not None:
+                    query = query.where(DoseOccurrence.id == req_occ_id)
+                due = db.scalar(
+                    query.order_by(DoseOccurrence.scheduled_at.asc(), DoseOccurrence.id.asc()).limit(1)
                 )
-                .order_by(DoseOccurrence.scheduled_at.desc(), DoseOccurrence.id.desc())
-                .limit(1)
+                if due is None:
+                    raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} hiện không có lần nhắc cần xác nhận")
+                occurrence_id = due.id
+                due.confirmed_at = now
+                due.status = "confirmed_late" if now - due.scheduled_at >= timedelta(minutes=5) else "confirmed_on_time"
+
+            now_wall = local_wall_time(parse_virtual_clock(state.virtual_clock))
+            if occurrence_id is None:
+                active_occ = db.scalar(
+                    select(DoseOccurrence)
+                    .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+                    .where(
+                        MedicationSchedule.slot == target_slot,
+                        MedicationSchedule.patient_id == state.patient_id,
+                        DoseOccurrence.clock_mode == state.clock_mode,
+                        DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
+                        DoseOccurrence.scheduled_at <= now_wall,
+                    )
+                    .order_by(DoseOccurrence.scheduled_at.desc(), DoseOccurrence.id.desc())
+                    .limit(1)
+                )
+                if active_occ is not None:
+                    occurrence_id = active_occ.id
+
+            patient_id = state.patient_id
+            if occurrence_id:
+                occ_obj = db.get(DoseOccurrence, occurrence_id)
+                if occ_obj:
+                    sched_obj = db.get(MedicationSchedule, occ_obj.schedule_id)
+                    if sched_obj:
+                        patient_id = sched_obj.patient_id
+
+            state.compartments = compartments
+            state.updated_at = datetime.now(timezone.utc)
+            record_device_event(
+                db,
+                event_uuid=event_uuid,
+                event_type=payload.event_type,
+                slot=target_slot,
+                virtual_time=state.virtual_clock,
+                occurrence_id=occurrence_id,
+                patient_id=patient_id,
+                extra_payload=extra_payload,
             )
-            if active_occ is not None:
-                occurrence_id = active_occ.id
-
-        patient_id = state.patient_id
-        if occurrence_id:
-            occ_obj = db.get(DoseOccurrence, occurrence_id)
-            if occ_obj:
-                sched_obj = db.get(MedicationSchedule, occ_obj.schedule_id)
-                if sched_obj:
-                    patient_id = sched_obj.patient_id
-
-        state.compartments = compartments
-        state.updated_at = datetime.now(timezone.utc)
-        record_device_event(
-            db,
-            event_uuid=event_uuid,
-            event_type=payload.event_type,
-            slot=target_slot,
-            virtual_time=state.virtual_clock,
-            occurrence_id=occurrence_id,
-            patient_id=patient_id,
-            extra_payload=extra_payload,
-        )
-        db.commit()
-        db.refresh(state)
-        return state_json(db, state)
+            db.commit()
+            db.refresh(state)
+            return state_json(db, state)
 
 
     @app.post("/api/simulation/advance")
@@ -752,78 +808,87 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         payload: ClockAdvanceInput,
         user: User = Depends(operator_only),
         db: Session = Depends(get_db),
+        request: Request,
     ):
-        state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
-        if state is None:
-            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
-        event_uuid = str(payload.event_uuid)
-        existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
-        if existing is not None:
-            same_content = existing.event_type == "CLOCK_ADVANCED" and existing.payload.get("minutes") == payload.minutes
-            if not same_content:
-                raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
-            return state_json(db, state, idempotent=True)
-        current = parse_virtual_clock(state.virtual_clock)
-        for minute in range(1, payload.minutes + 1):
-            process_clock_minute(db, current + timedelta(minutes=minute), state.patient_id)
-        state.virtual_clock = (current + timedelta(minutes=payload.minutes)).isoformat(timespec="seconds")
-        state.updated_at = datetime.now(timezone.utc)
-        record_device_event(
-            db,
-            event_uuid=event_uuid,
-            event_type="CLOCK_ADVANCED",
-            slot=None,
-            virtual_time=state.virtual_clock,
-            patient_id=state.patient_id,
-            extra_payload={"minutes": payload.minutes, "previous_virtual_time": iso_vietnam(current)},
-        )
-        db.commit()
-        db.refresh(state)
-        return state_json(db, state)
+        with request.app.state.clock_lock:
+            state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+            if state is None:
+                raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+            if state.clock_mode != "SIMULATION":
+                raise HTTPException(status_code=409, detail="Đang ở chế độ thời gian thực; hãy chuyển sang Mô phỏng")
+            event_uuid = str(payload.event_uuid)
+            existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
+            if existing is not None:
+                same_content = existing.event_type == "CLOCK_ADVANCED" and existing.payload.get("minutes") == payload.minutes
+                if not same_content:
+                    raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
+                return state_json(db, state, idempotent=True)
+            current = parse_virtual_clock(state.virtual_clock)
+            for minute in range(1, payload.minutes + 1):
+                process_clock_minute(db, current + timedelta(minutes=minute), state.patient_id, clock_mode="SIMULATION")
+            state.virtual_clock = (current + timedelta(minutes=payload.minutes)).isoformat(timespec="seconds")
+            state.updated_at = datetime.now(timezone.utc)
+            record_device_event(
+                db,
+                event_uuid=event_uuid,
+                event_type="CLOCK_ADVANCED",
+                slot=None,
+                virtual_time=state.virtual_clock,
+                patient_id=state.patient_id,
+                extra_payload={"minutes": payload.minutes, "previous_virtual_time": iso_vietnam(current)},
+            )
+            db.commit()
+            db.refresh(state)
+            return state_json(db, state)
 
     @app.post("/api/simulation/reset")
     def reset_simulation(
         payload: SimulationResetInput,
         user: User = Depends(operator_only),
         db: Session = Depends(get_db),
+        request: Request,
     ):
-        if not payload.confirm and payload.confirmation != "RESET_DEMO":
-            raise HTTPException(status_code=422, detail="Yêu cầu xác nhận confirm=true hoặc confirmation='RESET_DEMO'")
-        state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
-        if state is None:
-            raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
-        event_uuid = str(payload.event_uuid)
-        existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
-        if existing is not None:
-            if existing.event_type != "SIMULATION_RESET":
-                raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
-            return state_json(db, state, idempotent=True)
-        previous_clock = state.virtual_clock
-        # Only reset the data owned by this demo device's patient.
-        demo_schedule_ids = select(MedicationSchedule.id).where(
-            MedicationSchedule.patient_id == state.patient_id
-        )
-        demo_occurrence_ids = select(DoseOccurrence.id).where(
-            DoseOccurrence.schedule_id.in_(demo_schedule_ids)
-        )
-        db.execute(delete(Alert).where(Alert.patient_id == state.patient_id))
-        db.execute(delete(DeviceEvent).where(DeviceEvent.patient_id == state.patient_id))
-        db.execute(delete(DoseOccurrence).where(DoseOccurrence.id.in_(demo_occurrence_ids)))
-        state.virtual_clock = DEFAULT_SIMULATION_CLOCK
-        state.compartments = default_compartments()
-        state.updated_at = datetime.now(timezone.utc)
-        record_device_event(
-            db,
-            event_uuid=event_uuid,
-            event_type="SIMULATION_RESET",
-            slot=None,
-            patient_id=state.patient_id,
-            virtual_time=state.virtual_clock,
-            extra_payload={"previous_virtual_time": previous_clock},
-        )
-        db.commit()
-        db.refresh(state)
-        return state_json(db, state)
+        with request.app.state.clock_lock:
+            if not payload.confirm and payload.confirmation != "RESET_DEMO":
+                raise HTTPException(status_code=422, detail="Yêu cầu xác nhận confirm=true hoặc confirmation='RESET_DEMO'")
+            state = db.scalar(select(SimulationState).where(SimulationState.device_id == "SIM-001"))
+            if state is None:
+                raise HTTPException(status_code=503, detail="Chưa khởi tạo hộp mô phỏng")
+            if state.clock_mode != "SIMULATION":
+                raise HTTPException(status_code=409, detail="Chuyển sang Mô phỏng trước khi reset demo")
+            event_uuid = str(payload.event_uuid)
+            existing = db.scalar(select(DeviceEvent).where(DeviceEvent.event_uuid == event_uuid))
+            if existing is not None:
+                if existing.event_type != "SIMULATION_RESET":
+                    raise HTTPException(status_code=409, detail="event_uuid đã được dùng cho nội dung khác")
+                return state_json(db, state, idempotent=True)
+            previous_clock = state.virtual_clock
+            # Only reset the data owned by this demo device's patient.
+            demo_schedule_ids = select(MedicationSchedule.id).where(
+                MedicationSchedule.patient_id == state.patient_id
+            )
+            demo_occurrence_ids = select(DoseOccurrence.id).where(
+                DoseOccurrence.schedule_id.in_(demo_schedule_ids)
+            )
+            db.execute(delete(Alert).where(Alert.patient_id == state.patient_id))
+            db.execute(delete(DeviceEvent).where(DeviceEvent.patient_id == state.patient_id))
+            db.execute(delete(DoseOccurrence).where(DoseOccurrence.id.in_(demo_occurrence_ids)))
+            state.virtual_clock = DEFAULT_SIMULATION_CLOCK
+            state.simulation_clock = DEFAULT_SIMULATION_CLOCK
+            state.compartments = default_compartments()
+            state.updated_at = datetime.now(timezone.utc)
+            record_device_event(
+                db,
+                event_uuid=event_uuid,
+                event_type="SIMULATION_RESET",
+                slot=None,
+                patient_id=state.patient_id,
+                virtual_time=state.virtual_clock,
+                extra_payload={"previous_virtual_time": previous_clock},
+            )
+            db.commit()
+            db.refresh(state)
+            return state_json(db, state)
 
 
     return app
