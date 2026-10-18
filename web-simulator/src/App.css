@@ -1027,3 +1027,9 @@
   .login-screen { grid-template-columns: 1fr; }
   .login-art { display: none; }
 }
+
+/* Clock-mode control — intentionally minimal for the coursework UI. */
+.clock-mode-toggle { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.clock-mode-toggle button { border:1px solid #94a3b8; color:#334155; background:#f8fafc; padding:9px 13px; border-radius:9px; font-weight:700; cursor:pointer; }
+.clock-mode-toggle button.mode-active { background:#0f766e; color:#fff; border-color:#0f766e; }
+.clock-mode-toggle button:disabled { cursor:not-allowed; opacity:.5; }

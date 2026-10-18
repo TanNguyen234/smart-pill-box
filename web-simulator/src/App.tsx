@@ -35,6 +35,7 @@ type Occurrence = {
 type DeviceState = {
   device_id: string
   virtual_clock: string
+  clock_mode: 'SIMULATION' | 'REALTIME'
   next_milestone_minutes?: number
   compartments: Compartment[]
   active_schedules: Schedule[]
@@ -299,8 +300,32 @@ function App() {
     )
   }
 
+  async function changeClockMode(mode: 'SIMULATION' | 'REALTIME') {
+    if (!token || device?.clock_mode === mode) return
+    setBusyControl(true)
+    setActionMessage('')
+    try {
+      const previousReminderId = Math.max(
+        0, ...(device?.recent_events ?? [])
+          .filter((item) => item.event_type === 'REMINDER_SENT')
+          .map((item) => item.id)
+      )
+      const updated = await request<DeviceState>('/api/simulation/mode', token, {
+        method: 'POST',
+        body: JSON.stringify({ clock_mode: mode }),
+      })
+      lastReminderEventId.current = previousReminderId
+      setDevice(updated)
+      setConnectionError('')
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Không chuyển được chế độ đồng hồ')
+    } finally {
+      setBusyControl(false)
+    }
+  }
+
   async function advanceClock(minutes: number) {
-    if (!token) return
+    if (!token || device?.clock_mode === 'REALTIME') return
     setBusyControl(true)
     setActionMessage('')
     try {
@@ -325,7 +350,7 @@ function App() {
   }
 
   async function resetSimulation() {
-    if (!token || !window.confirm('Đặt lại hộp sẽ xóa lịch sử thao tác, lần nhắc và cảnh báo của phiên demo hiện tại. Các tài khoản và lịch thuốc vẫn được giữ; nhật ký sẽ ghi thao tác đặt lại. Tiếp tục?')) return
+    if (!token || device?.clock_mode === 'REALTIME' || !window.confirm('Đặt lại hộp sẽ xóa lịch sử thao tác, lần nhắc và cảnh báo của phiên demo hiện tại. Các tài khoản và lịch thuốc vẫn được giữ; nhật ký sẽ ghi thao tác đặt lại. Tiếp tục?')) return
     setBusyControl(true)
     setActionMessage('')
     try {
@@ -408,7 +433,7 @@ function App() {
             <p className="muted">Một hộp ảo, ba ngăn thật dữ liệu. Mỗi thao tác được máy chủ xác nhận trước khi giao diện cập nhật.</p>
           </div>
           <div className="clock-card">
-            <span className="clock-label">GIỜ MÔ PHỎNG · GMT+7</span>
+            <span className="clock-label">{device?.clock_mode === 'REALTIME' ? 'GIỜ THỰC TẾ · VIỆT NAM (GMT+7)' : 'GIỜ MÔ PHỎNG · GMT+7'}</span>
             <strong>{device ? clockLabel(device.virtual_clock) : '— — : — —'}</strong>
             <span className="clock-date">{device ? dateLabel(device.virtual_clock) : 'Đang tải trạng thái'}</span>
           </div>
@@ -419,11 +444,15 @@ function App() {
         {loading && !device && <div className="loading-card"><span className="loader" />Đang tải trạng thái từ SQLite…</div>}
 
         <section className="simulation-console" aria-label="Điều khiển đồng hồ mô phỏng">
-          <div className="console-copy"><span className="console-icon">◷</span><div><p className="eyebrow">ĐIỀU KHIỂN THỜI GIAN</p><strong>Tiến đồng hồ ảo</strong><small>Chạy qua mốc nhắc mà không đổi giờ máy tính.</small></div></div>
+          <div className="console-copy"><span className="console-icon">◷</span><div><p className="eyebrow">CHẾ ĐỘ NHẮC THUỐC</p><strong>{device?.clock_mode === 'REALTIME' ? 'Tự động theo giờ thật' : 'Đồng hồ mô phỏng'}</strong><small>{device?.clock_mode === 'REALTIME' ? 'Backend tự kiểm tra giờ uống liên tục, kể cả khi đóng website. Giữ FastAPI đang chạy.' : 'Tiến phút chủ động để trình diễn nhắc giờ và cảnh báo.'}</small></div></div>
+          <div className="clock-mode-toggle" role="group" aria-label="Chế độ thời gian">
+            <button type="button" className={device?.clock_mode !== 'REALTIME' ? 'mode-active' : ''} disabled={!device || busyControl} onClick={() => void changeClockMode('SIMULATION')}>Mô phỏng</button>
+            <button type="button" className={device?.clock_mode === 'REALTIME' ? 'mode-active' : ''} disabled={!device || busyControl} onClick={() => void changeClockMode('REALTIME')}>Thời gian thực</button>
+          </div>
           <div className="clock-buttons">
-            {[1, 2, 5].map((minutes) => <button type="button" key={minutes} disabled={!device || busyControl} onClick={() => void advanceClock(minutes)}>{busyControl ? 'Đang chạy…' : `+${minutes} phút`}</button>)}
-            <button className="milestone-button" type="button" disabled={!device || busyControl} onClick={() => void advanceClock(device?.next_milestone_minutes ?? 1)} title="Nhảy đến mốc nhắc thuốc hoặc quá hạn gần nhất">Mốc tiếp theo (+{device?.next_milestone_minutes ?? 1}p)</button>
-            <button className="reset-button" type="button" disabled={!device || busyControl} onClick={() => void resetSimulation()}>Đặt lại hộp</button>
+            {[1, 2, 5].map((minutes) => <button type="button" key={minutes} disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void advanceClock(minutes)}>{busyControl ? 'Đang chạy…' : `+${minutes} phút`}</button>)}
+            <button className="milestone-button" type="button" disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void advanceClock(device?.next_milestone_minutes ?? 1)} title="Nhảy đến mốc nhắc thuốc hoặc quá hạn gần nhất">Mốc tiếp theo (+{device?.next_milestone_minutes ?? 1}p)</button>
+            <button className="reset-button" type="button" disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void resetSimulation()}>Đặt lại hộp</button>
           </div>
         </section>
 
