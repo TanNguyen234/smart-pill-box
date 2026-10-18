@@ -39,6 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _pendingAlertCount = 0;
   bool _loadingDoses = false;
   Timer? _pollingTimer;
+  Map<int, String> _lastDoseStatuses = {};
+  bool _hasObservedDoses = false;
 
   @override
   void initState() {
@@ -69,11 +71,31 @@ class _HomeScreenState extends State<HomeScreen> {
       final doses = await widget.api.doses(patientId: _selectedPatientId);
       final alerts = await widget.api.alerts(patientId: _selectedPatientId, status: 'PENDING');
       if (mounted) {
+        final previous = _lastDoseStatuses;
+        final newlyReminding = _hasObservedDoses && doses.any((dose) =>
+            (dose.status == 'pending' || dose.status == 'reminded') &&
+            previous[dose.id] != dose.status);
+        final newlyOverdue = _hasObservedDoses && doses.any((dose) =>
+            dose.status == 'overdue' && previous[dose.id] != dose.status);
+        final newlyAlerted = _hasObservedDoses && alerts.length > _pendingAlertCount;
+        _lastDoseStatuses = {for (final dose in doses) dose.id: dose.status};
+        _hasObservedDoses = true;
         setState(() {
           _todayDoses = doses;
           _pendingAlertCount = alerts.length;
           _loadingDoses = false;
         });
+        if (newlyReminding || newlyOverdue || newlyAlerted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(newlyOverdue || newlyAlerted
+                  ? 'Có lần uống quá hạn, hãy kiểm tra cảnh báo.'
+                  : 'Đã đến giờ nhắc uống thuốc theo lịch!'),
+              duration: const Duration(seconds: 5),
+            ));
+          });
+        }
       }
     } catch (_) {
       if (mounted && !silent) {
@@ -371,7 +393,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                         }).toList(),
                         onChanged: (val) {
-                          setState(() => _selectedPatientId = val);
+                          setState(() {
+                            _selectedPatientId = val;
+                            _lastDoseStatuses = {};
+                            _hasObservedDoses = false;
+                          });
                           _fetchTodayData();
                         },
                       ),

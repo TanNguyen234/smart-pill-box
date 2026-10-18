@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/smart_pill_api.dart';
@@ -20,6 +21,7 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   List<AlertItem> _alerts = [];
   bool _loading = false;
+  Timer? _refreshTimer;
   String? _error;
 
   @override
@@ -30,6 +32,17 @@ class _AlertsScreenState extends State<AlertsScreen> {
     } else if (widget.api?.token != null) {
       _loadAlerts();
     }
+    if (widget.initialAlerts == null) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted && !_loading && widget.api?.token != null) _loadAlerts();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> refreshAlerts() => _loadAlerts();

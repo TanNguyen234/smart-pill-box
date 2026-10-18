@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/smart_pill_api.dart';
@@ -20,6 +21,7 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   List<DeviceEventItem> _events = [];
   bool _loading = false;
+  Timer? _refreshTimer;
   String? _error;
   int? _selectedSlot;
   String? _selectedDate;
@@ -32,6 +34,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } else if (widget.api?.token != null) {
       _loadEvents();
     }
+    if (widget.initialEvents == null) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted && !_loading && widget.api?.token != null) _loadEvents();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadEvents() async {
