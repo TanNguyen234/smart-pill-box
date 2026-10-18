@@ -67,7 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     try {
       final doses = await widget.api.doses(patientId: _selectedPatientId);
-      final alerts = await widget.api.alerts(status: 'PENDING');
+      final alerts = await widget.api.alerts(patientId: _selectedPatientId, status: 'PENDING');
       if (mounted) {
         setState(() {
           _todayDoses = doses;
@@ -135,9 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await widget.onUpdateSchedule(schedule.id, {'active': value});
-      if (widget.onRefreshData != null) {
-        await widget.onRefreshData!();
-      }
+      // Parent callback persists the PATCH; a later GET failure must not undo it.
     } catch (e) {
       if (mounted) {
         setState(() {

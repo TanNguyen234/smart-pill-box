@@ -52,6 +52,7 @@ class DeviceEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     event_uuid: Mapped[str] = mapped_column(String(36), index=True)
     event_type: Mapped[str] = mapped_column(String(30))
+    device_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True)
     slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
     occurrence_id: Mapped[int | None] = mapped_column(ForeignKey("dose_occurrences.id"), nullable=True)

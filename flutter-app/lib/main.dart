@@ -116,7 +116,7 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                     slot: values['slot'] as int,
                     time: values['time'] as String,
                   );
-                  await _refreshSchedules();
+                  try { await _refreshSchedules(); } catch (_) { /* Update persisted; retry on refresh. */ }
                 },
                 onUpdateSchedule: (scheduleId, values) async {
                   await _api.updateSchedule(
@@ -126,7 +126,7 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                     time: values['time'] as String?,
                     active: values['active'] as bool?,
                   );
-                  await _refreshSchedules();
+                  try { await _refreshSchedules(); } catch (_) { /* Update persisted; retry on refresh. */ }
                 },
                 onRefreshData: _refreshSchedules,
                 onLogout: _logout,

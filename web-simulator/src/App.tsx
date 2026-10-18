@@ -304,11 +304,17 @@ function App() {
     setBusyControl(true)
     setActionMessage('')
     try {
-      const updated = await request<DeviceState>('/api/simulation/advance', token, {
-        method: 'POST',
-        body: JSON.stringify({ event_uuid: crypto.randomUUID(), minutes }),
-      })
-      setDevice(updated)
+      // API accepts at most 60 minutes per request; span later milestones safely.
+      let remaining = minutes
+      while (remaining > 0) {
+        const chunk = Math.min(60, remaining)
+        const updated = await request<DeviceState>('/api/simulation/advance', token, {
+          method: 'POST',
+          body: JSON.stringify({ event_uuid: crypto.randomUUID(), minutes: chunk }),
+        })
+        setDevice(updated)
+        remaining -= chunk
+      }
       setConnectionError('')
     } catch (error) {
       if (error instanceof ApiRequestError) setActionMessage(error.message)
@@ -325,7 +331,7 @@ function App() {
     try {
       const updated = await request<DeviceState>('/api/simulation/reset', token, {
         method: 'POST',
-        body: JSON.stringify({ confirm: true, event_uuid: crypto.randomUUID() }),
+        body: JSON.stringify({ confirmation: 'RESET_DEMO', event_uuid: crypto.randomUUID() }),
       })
       setDevice(updated)
       lastReminderEventId.current = 0

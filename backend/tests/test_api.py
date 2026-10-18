@@ -226,7 +226,7 @@ def test_operator_simulation_controls_are_persistent_and_idempotent(tmp_path):
 
     reset_event_uuid = "6c9b3d08-99f4-4019-b18e-071394031194"
     reset = client.post(
-        "/api/simulation/reset", headers=operator, json={"event_uuid": reset_event_uuid}
+        "/api/simulation/reset", headers=operator, json={"event_uuid": reset_event_uuid, "confirm": True}
     )
     assert reset.status_code == 200
     reset_state = reset.json()
@@ -240,7 +240,7 @@ def test_operator_simulation_controls_are_persistent_and_idempotent(tmp_path):
         assert db.query(DeviceEvent).count() == 1
         assert db.query(MedicationSchedule).count() == 4
     reset_retry = client.post(
-        "/api/simulation/reset", headers=operator, json={"event_uuid": reset_event_uuid}
+        "/api/simulation/reset", headers=operator, json={"event_uuid": reset_event_uuid, "confirm": True}
     )
     assert reset_retry.json()["idempotent"] is True
 
@@ -473,3 +473,99 @@ def test_security_unauthenticated_and_operator_isolation(tmp_path):
         json={"slot": 1, "event_type": "WEIGHT_READING", "payload": {"weight_g": -1.5}},
     ).status_code == 422
 
+
+def test_simulator_is_bound_to_one_patient_and_reset_preserves_other_patient(tmp_path):
+    from app.models import Patient, SimulationState
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+    caregiver_a = login(client, "caregiver-a@example.test")
+    caregiver_b = login(client, "caregiver-b@example.test")
+    session_factory = client.app.state.session_factory
+    with session_factory.begin() as db:
+        patient_b = db.scalar(select(Patient).where(Patient.name == "Hồ sơ giả B"))
+        schedule_b = db.scalar(select(MedicationSchedule).where(MedicationSchedule.patient_id == patient_b.id))
+        other_dose = DoseOccurrence(
+            schedule_id=schedule_b.id,
+            scheduled_at=__import__("datetime").datetime(2026, 10, 9, 9, 0),
+            status="overdue",
+        )
+        db.add(other_dose)
+        db.flush()
+        db.add(Alert(
+            patient_id=patient_b.id,
+            occurrence_id=other_dose.id,
+            recipient_id=patient_b.caregiver_id,
+            kind="dose_overdue",
+            status="PENDING",
+            message="Other caregiver alert",
+        ))
+        db.add(DeviceEvent(
+            event_uuid="07a40a5e-1e75-472d-96eb-c70b0517b4b1",
+            event_type="LID_OPENED",
+            patient_id=patient_b.id,
+            slot=2,
+            payload={"device_id": "OTHER"},
+        ))
+    state = client.get("/api/simulation/state", headers=operator).json()
+    assert {s["time"] for s in state["active_schedules"]} == {"08:00", "12:00", "20:00"}
+    assert client.get("/api/events", headers=caregiver_a).json() == []
+    assert len(client.get("/api/events", headers=caregiver_b).json()) == 1
+    assert client.post("/api/simulation/advance", headers=operator, json={"minutes": 60}).status_code == 200
+    assert client.post("/api/simulation/advance", headers=operator, json={"minutes": 2}).status_code == 200
+    with session_factory() as db:
+        assert db.scalars(select(DoseOccurrence).where(DoseOccurrence.schedule_id == schedule_b.id)).first() is not None
+    response = client.post("/api/simulation/reset", headers=operator, json={"confirm": True})
+    assert response.status_code == 200
+    with session_factory() as db:
+        assert db.scalar(select(DoseOccurrence).where(DoseOccurrence.schedule_id == schedule_b.id)) is not None
+        assert db.scalar(select(Alert).where(Alert.patient_id == patient_b.id)) is not None
+        assert db.scalar(select(DeviceEvent).where(DeviceEvent.patient_id == patient_b.id)) is not None
+    assert len(client.get("/api/alerts", headers=caregiver_b).json()) == 1
+
+
+def test_history_uses_virtual_date_and_hides_unassigned_events(tmp_path):
+    from datetime import datetime
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+    caregiver = login(client, "caregiver-a@example.test")
+    client.post("/api/simulation/events", headers=operator, json={"slot": 1, "event_type": "LID_OPENED"})
+    with client.app.state.session_factory.begin() as db:
+        db.add(DeviceEvent(
+            event_uuid="8d4ff59e-68b2-4452-8f1e-62ab18f19dda",
+            event_type="CLOCK_ADVANCED",
+            patient_id=None,
+            payload={"device_id": "OTHER"},
+            created_at=datetime(2026, 10, 9, 8, 0),
+        ))
+    assert len(client.get("/api/events?date=2026-10-09", headers=caregiver).json()) == 1
+    assert client.get("/api/events?date=2026-10-10", headers=caregiver).json() == []
+    assert client.get("/api/events?date=not-a-date", headers=caregiver).status_code == 422
+
+
+def test_event_uuid_cannot_be_reused_with_changed_payload(tmp_path):
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+    event = {"event_uuid": "71aa88a2-a619-4112-a883-1166e0c0898a", "slot": 1, "event_type": "LID_OPENED"}
+    assert client.post("/api/simulation/events", headers=operator, json=event).status_code == 200
+    assert client.post("/api/simulation/events", headers=operator, json=event).json()["idempotent"] is True
+    assert client.post("/api/simulation/events", headers=operator, json={**event, "payload": {"extra": "different"}}).status_code == 409
+    assert client.post("/api/simulation/reset", headers=operator, json={}).status_code == 422
+
+
+def test_sqlite_schema_upgrades_legacy_tables_without_deleting_rows(tmp_path):
+    import sqlite3
+    from app.main import create_app
+    database = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(database) as conn:
+        conn.execute("CREATE TABLE dose_occurrences (id INTEGER PRIMARY KEY, schedule_id INTEGER, scheduled_at DATETIME, confirmed_at DATETIME, status VARCHAR(30))")
+        conn.execute("CREATE TABLE device_events (id INTEGER PRIMARY KEY, event_uuid VARCHAR(36), event_type VARCHAR(30), occurrence_id INTEGER, payload JSON, created_at DATETIME)")
+        conn.execute("CREATE TABLE alerts (id INTEGER PRIMARY KEY, patient_id INTEGER, occurrence_id INTEGER, kind VARCHAR(40), message VARCHAR(255), created_at DATETIME, resolved_at DATETIME)")
+        conn.execute("CREATE TABLE simulation_state (id INTEGER PRIMARY KEY, device_id VARCHAR(30), virtual_clock VARCHAR(40), compartments JSON, updated_at DATETIME)")
+    app = create_app(database_url=f"sqlite:///{database}", jwt_secret="testing-secret")
+    from sqlalchemy import inspect
+    with app.state.engine.connect() as conn:
+        db = inspect(conn)
+        assert {"deadline_at", "reminder_count"} <= {c["name"] for c in db.get_columns("dose_occurrences")}
+        assert {"patient_id", "slot", "device_id", "occurred_at"} <= {c["name"] for c in db.get_columns("device_events")}
+        assert {"recipient_id", "note", "status"} <= {c["name"] for c in db.get_columns("alerts")}
+        assert "patient_id" in {c["name"] for c in db.get_columns("simulation_state")}

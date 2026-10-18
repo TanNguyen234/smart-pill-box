@@ -16,7 +16,7 @@ start "Smart Pill Box - Web Simulator (Port 5173)" cmd /k "cd /d %~dp0web-simula
 timeout /t 2 >nul
 
 echo [3/3] Đang khởi động Flutter Web App tại http://localhost:8080 ...
-start "Smart Pill Box - Flutter Web (Port 8080)" cmd /k "cd /d %~dp0backend && .venv\Scripts\python.exe -m http.server 8080 --directory ..\flutter-app\build\web"
+start "Smart Pill Box - Flutter Web (Port 8080)" cmd /k "cd /d %~dp0flutter-app && flutter run -d web-server --web-port 8080 --web-hostname 127.0.0.1"
 
 echo.
 echo =======================================================================

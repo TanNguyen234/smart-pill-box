@@ -32,6 +32,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
     }
   }
 
+  Future<void> refreshAlerts() => _loadAlerts();
+
   Future<void> _loadAlerts() async {
     final api = widget.api;
     if (api == null || api.token == null) return;
