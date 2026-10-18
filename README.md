@@ -79,15 +79,17 @@ flowchart TD
 
 ## Đối chiếu 5 thành viên & Phân công trách nhiệm
 
-Hệ thống đã hợp nhất toàn bộ mã nguồn của 5 thành viên, giải quyết triệt để tất cả các lỗi được chỉ ra trong báo cáo nghiệm thu độc lập:
+Bản tích hợp đã có các chức năng chính; cần thực thi kiểm thử trên môi trường sạch trước khi nghiệm thu.
 
 | Thành viên | Trách nhiệm theo phân công | Hiện trạng triển khai & Bằng chứng nghiệm thu |
 | :--- | :--- | :--- |
-| **Thành viên 1** | Quản lý tài khoản, Đăng nhập JWT, Phân quyền Caregiver/Operator. | **Đạt 100%:** Endpoint `/api/auth/login`, bảo vệ Token Bearer, cách ly dữ liệu giữa các Caregiver (Cross-caregiver isolation). |
-| **Thành viên 2** | Đồng hồ ảo, quy trình nhắc giờ, cảm biến, cảnh báo quá hạn. | **Đạt 100%:** Luồng 07:59 $\rightarrow$ 08:00 $\rightarrow$ 08:02 $\rightarrow$ 08:05, xử lý múi giờ SQLite UTC/GMT+7 không crash, chống trùng UUID sự kiện. |
-| **Thành viên 3** | Quản lý lịch uống thuốc, giao diện thêm/sửa lịch 24h. | **Đạt 100%:** Chặn trùng lịch (409 Conflict) ở cả POST và PATCH, form nhập liệu 24h regex `HH:mm`, giới hạn ngăn 1-3. |
-| **Thành viên 4** | Ứng dụng Flutter di động cho người chăm sóc. | **Đạt 100%:** 5 tab hoàn chỉnh (Hôm nay, Lịch, Lịch sử Timeline, Cảnh báo, Tài khoản), xử lý cảnh báo với ghi chú bắt buộc, hỗ trợ Quick Note Chips. |
-| **Thành viên 5** | Web Simulator phần cứng, cảm biến tải trọng, ngưỡng rung. | **Đạt 100%:** Nắp 3D, LED vòm phát sáng breathing pulse, viên thuốc 3D 2 màu, cân OLED, lọc nhiễu rung `<0.3g`, bảo vệ nút Reset bằng quyền Operator. |
+| **Thành viên 1** | Backend, SQLite, tài khoản, phân quyền và quản lý lịch | Có mã nguồn; cần kiểm thử thực tế |
+| **Thành viên 2** | Đồng hồ, cảm biến, nhắc giờ, cảnh báo | Có mã nguồn; cần kiểm thử xuyên suốt |
+| **Thành viên 3** | Website hộp thuốc ảo ba ngăn | Có React, cân, LED, còi và các nút mô phỏng |
+| **Thành viên 4** | Flutter đăng nhập, lịch uống, Hôm nay | Có app và API client, cần test Android |
+| **Thành viên 5** | Flutter lịch sử/cảnh báo, QA, tài liệu và demo | Có giao diện/API; cần minh chứng kiểm thử và hồ sơ |
+
+**Lưu ý:** Có chức năng trong mã nguồn không đồng nghĩa đạt 100%. Phân công lấy theo file Word kế hoạch của nhóm, không suy luận công lao cá nhân từ commit `main`.
 
 ---
 
@@ -211,11 +213,11 @@ Toàn bộ hệ sinh thái Smart Pill Box được kiểm soát nghiêm ngặt q
 ========================================================================================
                             QUALITY GATES VERIFICATION SUMMARY
 ========================================================================================
- [PASS] Backend Pytest Suite               : 8/8 PASSED     (100% logic, bảo mật & múi giờ)
- [PASS] Flutter Widget Tests               : 2/2 PASSED     (Đầy đủ 5 tabs & assertions)
- [PASS] Flutter Static Analysis            : 0 ISSUES       (Hoàn toàn sạch cảnh báo/linter)
- [PASS] Web Simulator Production Build     : PASSED         (tsc + vite build trong 503ms)
- [PASS] Chrome DevTools Protocol Audit (CDP): 12/12 PASSED   (Console sạch, 0 lỗi mạng)
+ [CHỜ KIỂM CHỨNG] Backend Pytest Suite               : 8/8 PASSED     (100% logic, bảo mật & múi giờ)
+ [CHỜ KIỂM CHỨNG] Flutter Widget Tests               : 2/2 PASSED     (Đầy đủ 5 tabs & assertions)
+ [CHỜ KIỂM CHỨNG] Flutter Static Analysis            : 0 ISSUES       (Hoàn toàn sạch cảnh báo/linter)
+ [CHỜ KIỂM CHỨNG] Web Simulator Production Build     : PASSED         (tsc + vite build trong 503ms)
+ [CHỜ KIỂM CHỨNG] Chrome DevTools Protocol Audit (CDP): 12/12 PASSED   (Console sạch, 0 lỗi mạng)
 ========================================================================================
 ```
 
