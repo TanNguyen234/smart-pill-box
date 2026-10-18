@@ -10,6 +10,7 @@ ADDITIONS = {
     "dose_occurrences": {
         "deadline_at": "DATETIME",
         "reminder_count": "INTEGER NOT NULL DEFAULT 0",
+        "clock_mode": "VARCHAR(20) NOT NULL DEFAULT 'SIMULATION'",
     },
     "device_events": {
         "patient_id": "INTEGER REFERENCES patients(id)",
@@ -24,6 +25,8 @@ ADDITIONS = {
     },
     "simulation_state": {
         "patient_id": "INTEGER REFERENCES patients(id)",
+        "clock_mode": "VARCHAR(20) NOT NULL DEFAULT 'SIMULATION'",
+        "simulation_clock": "VARCHAR(40)",
     },
 }
 
@@ -42,6 +45,11 @@ def upgrade_sqlite_schema(engine) -> None:
                     connection.exec_driver_sql(
                         f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
                     )
+        # Retain the saved demo cursor when upgrading databases from the first release.
+        connection.exec_driver_sql("""
+            UPDATE simulation_state SET simulation_clock = virtual_clock
+            WHERE simulation_clock IS NULL
+        """)
         # The demo device has one patient; older databases did not store this link.
         connection.exec_driver_sql("""
             UPDATE simulation_state SET patient_id = (

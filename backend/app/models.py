@@ -44,6 +44,7 @@ class DoseOccurrence(Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="scheduled")
     reminder_count: Mapped[int] = mapped_column(Integer, default=0)
+    clock_mode: Mapped[str] = mapped_column(String(20), default="SIMULATION")
 
 
 class DeviceEvent(Base):
@@ -81,6 +82,8 @@ class SimulationState(Base):
     device_id: Mapped[str] = mapped_column(String(30), unique=True)
     patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True)
     virtual_clock: Mapped[str] = mapped_column(String(40))
+    clock_mode: Mapped[str] = mapped_column(String(20), default="SIMULATION")
+    simulation_clock: Mapped[str | None] = mapped_column(String(40), nullable=True)
     compartments: Mapped[list] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

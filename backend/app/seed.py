@@ -87,6 +87,8 @@ def seed_demo(session_factory, demo_password: str) -> None:
                     device_id="SIM-001",
                     patient_id=patients["caregiver-a@example.test"].id,
                     virtual_clock=DEFAULT_SIMULATION_CLOCK,
+                    simulation_clock=DEFAULT_SIMULATION_CLOCK,
+                    clock_mode="SIMULATION",
                     compartments=default_compartments(),
                 )
             )
