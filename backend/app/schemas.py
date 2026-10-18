@@ -182,3 +182,7 @@ class DeviceEventOutput(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+
+class ClockModeInput(BaseModel):
+    clock_mode: Literal["SIMULATION", "REALTIME"]

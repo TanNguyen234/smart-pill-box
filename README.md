@@ -237,3 +237,16 @@ Toàn bộ hệ sinh thái Smart Pill Box được kiểm soát nghiêm ngặt q
 
 ---
 *Dự án phát triển bởi nhóm 5 thành viên — Smart Pill Box System 2026.*
+
+
+## Hai chế độ đồng hồ — Mô phỏng và Thời gian thực
+
+- **Mô phỏng (mặc định):** đồng hồ hộp bắt đầu lúc `2026-10-09 07:59 GMT+7`; operator bấm cộng phút hoặc tới mốc tiếp theo để chạy demo. Không dùng giờ đồng hồ hệ điều hành.
+- **Thời gian thực:** operator đăng nhập website, chọn **Thời gian thực** trong thanh điều khiển. Backend chạy tác vụ định kỳ khoảng 3 giây trong vòng đời FastAPI, dùng múi giờ `GMT+07:00` và xử lý mốc 08:00 → 08:02 → 08:05 tự động. Đồng hồ, chế độ và các lần uống được lưu SQLite; không cần mở website để bộ xử lý chạy.
+- API `POST /api/simulation/mode` yêu cầu `Authorization: Bearer <operator JWT>` với JSON `{"clock_mode":"REALTIME"}` hoặc `{"clock_mode":"SIMULATION"}`. `GET /api/simulation/state` trả về `clock_mode` và `virtual_clock`.
+- Chuyển sang **Thời gian thực** không phát lại những giờ đã qua trong ngày; lần nhắc đúng phút hiện tại được kiểm tra ngay. Chuyển về **Mô phỏng** sẽ tiếp tục ở vị trí đồng hồ demo trước đó.
+- Cùng một hệ thống xử lý lần nhắc và cảnh báo, nhưng các lần uống của hai chế độ được phân biệt bởi `dose_occurrences.clock_mode`. Các phiên bản SQLite cũ được bổ sung cột tự động mà không xóa lịch sử.
+- Khi realtime đang bật, nút tiến giờ và reset demo bị khóa để tránh sửa giờ thật. Để reset, chuyển về Mô phỏng trước. Chỉ operator được chuyển chế độ.
+- **Yêu cầu chạy:** để FastAPI hoạt động liên tục với chế độ realtime, dùng **một worker Uvicorn** (`python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1`); không dùng `--reload` khi demo độ ổn định. Nếu backend tắt thì không phát nhắc trong lúc tắt; khi bật lại tác vụ có thể xử lý tối đa 24 giờ đã bỏ lỡ.
+- **Giới hạn:** chưa có push notification hệ điều hành khi đóng ứng dụng; Flutter đang mở tải lại dữ liệu định kỳ, website đang mở có thể phát tiếng nếu đã bật âm thanh. Đây là tính năng demo quản lý thuốc, không thay thế thiết bị nhắc thuốc y tế độc lập.
+- **Kiểm thử:** `cd backend; python -m pytest -q`; `cd web-simulator; npm run build`; `cd flutter-app; flutter test`. Kiểm tra thêm bằng cách đặt lịch sắp tới theo giờ Việt Nam, chọn Thời gian thực, chờ mốc và xác nhận cả event, occurrence, alert lưu SQLite.
