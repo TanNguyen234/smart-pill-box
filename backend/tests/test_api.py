@@ -661,3 +661,173 @@ def test_clear_events(tmp_path):
     events_after = client.get("/api/events", headers=caregiver)
     assert len(events_after.json()) == 0
 
+
+def test_confirm_pressed_requires_dose_taken_and_lid_closed_auto_confirms(tmp_path):
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+
+    # 1. Advance clock to 08:00 (reminder triggers for slot 1)
+    adv = client.post("/api/simulation/advance", headers=operator, json={"minutes": 1})
+    assert adv.status_code == 200
+    state = adv.json()
+    assert state["virtual_clock"] == "2026-10-09T08:00:00+07:00"
+    assert state["compartments"][0]["buzzer_on"] is True
+    assert state["compartments"][0]["led"] == "Bật"
+
+    # 2. Try pressing CONFIRM_PRESSED without taking medicine -> must return 409 Conflict
+    cheat_press = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "CONFIRM_PRESSED"},
+    )
+    assert cheat_press.status_code == 409
+    assert "Chưa lấy bịch thuốc khỏi ngăn 1" in cheat_press.json()["detail"]
+
+    # Verify buzzer is STILL ringing!
+    state_after_cheat = client.get("/api/simulation/state", headers=operator).json()
+    assert state_after_cheat["compartments"][0]["buzzer_on"] is True
+    assert state_after_cheat["compartments"][0]["led"] == "Bật"
+
+    # 3. Open lid but don't take medicine, then close lid -> must NOT confirm, buzzer remains on
+    open_lid = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "LID_OPENED"},
+    )
+    assert open_lid.status_code == 200
+
+    close_lid_no_take = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "LID_CLOSED"},
+    )
+    assert close_lid_no_take.status_code == 200
+    # Still ringing because medicine was NOT taken!
+    assert close_lid_no_take.json()["compartments"][0]["buzzer_on"] is True
+    assert close_lid_no_take.json()["compartments"][0]["led"] == "Bật"
+
+    # 4. Now open lid, take 1 packet of medicine (-0.5g), and close lid -> Auto-confirms and turns buzzer off!
+    open_again = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "LID_OPENED"},
+    )
+    assert open_again.status_code == 200
+
+    take_pill = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "WEIGHT_READING", "payload": {"weight_g": 4.5}},
+    )
+    assert take_pill.status_code == 200
+    assert take_pill.json()["compartments"][0]["pill_count"] == 9
+
+    # Now close lid -> should automatically confirm the dose!
+    close_and_auto_confirm = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "LID_CLOSED"},
+    )
+    assert close_and_auto_confirm.status_code == 200
+    comp1 = close_and_auto_confirm.json()["compartments"][0]
+    assert comp1["buzzer_on"] is False
+    assert comp1["led"] == "Tắt"
+    assert comp1["reminder"] == "Đã xác nhận đúng hạn"
+
+    # Check database status
+    with client.app.state.session_factory() as db:
+        occ = db.query(DoseOccurrence).filter(DoseOccurrence.schedule_id == 1).first()
+        assert occ.status == "confirmed_on_time"
+        assert occ.confirmed_at is not None
+
+        # Check DOSE_CONFIRMED event was recorded with auto_confirmed=True
+        auto_event = db.query(DeviceEvent).filter(
+            DeviceEvent.event_type == "DOSE_CONFIRMED",
+            DeviceEvent.slot == 1,
+        ).first()
+        assert auto_event is not None
+        assert auto_event.payload.get("auto_confirmed") is True
+
+    # 5. Pressing CONFIRM_PRESSED now returns 409 because dose is already confirmed!
+    extra_press = client.post(
+        "/api/simulation/events",
+        headers=operator,
+        json={"compartment_id": 1, "event_type": "CONFIRM_PRESSED"},
+    )
+    assert extra_press.status_code == 409
+    assert "hiện không có lần nhắc cần xác nhận" in extra_press.json()["detail"]
+
+
+def test_single_compartment_multiple_doses_same_medication(tmp_path):
+    """
+    Business reality: A single compartment can hold multiple identical pouches
+    used across multiple daily doses (e.g. 08:00, 14:00, 20:00) to save compartment space.
+    """
+    client = make_client(tmp_path)
+    caregiver = login(client, "caregiver-a@example.test")
+    operator = login(client, "operator@example.test")
+
+    # Update slot 1 default schedule to "Bịch thuốc huyết áp"
+    client.patch(
+        "/api/schedules/1",
+        headers=caregiver,
+        json={"medication_name": "Bịch thuốc huyết áp"},
+    )
+
+    # Add 2 more doses to slot 1: 14:00 and 20:00
+    res_14 = client.post(
+        "/api/schedules",
+        headers=caregiver,
+        json={"patient_id": 1, "medication_name": "Bịch thuốc huyết áp", "slot": 1, "time": "14:00", "active": True},
+    )
+    assert res_14.status_code == 201
+
+    res_20 = client.post(
+        "/api/schedules",
+        headers=caregiver,
+        json={"patient_id": 1, "medication_name": "Bịch thuốc huyết áp", "slot": 1, "time": "20:00", "active": True},
+    )
+    assert res_20.status_code == 201
+
+    # Check state_json has schedule_times and schedule_count
+    state = client.get("/api/simulation/state", headers=operator).json()
+    comp1 = state["compartments"][0]
+    assert comp1["slot"] == 1
+    assert comp1["medication_name"] == "Bịch thuốc huyết áp"
+    assert comp1["schedule_count"] == 3
+    assert comp1["schedule_times"] == ["08:00", "14:00", "20:00"]
+
+    # Advance clock to 08:00 -> 1st dose rings
+    adv1 = client.post("/api/simulation/advance", headers=operator, json={"minutes": 1}).json()
+    comp1 = adv1["compartments"][0]
+    assert comp1["buzzer_on"] is True
+    assert comp1["pill_count"] == 10
+
+    # Patient takes 1 pouch and closes lid -> auto confirmed
+    client.post("/api/simulation/events", headers=operator, json={"compartment_id": 1, "event_type": "LID_OPENED"})
+    client.post("/api/simulation/events", headers=operator, json={"compartment_id": 1, "event_type": "WEIGHT_READING", "payload": {"weight_g": 4.5}})
+    closed1 = client.post("/api/simulation/events", headers=operator, json={"compartment_id": 1, "event_type": "LID_CLOSED"}).json()
+    comp1 = closed1["compartments"][0]
+    assert comp1["buzzer_on"] is False
+    assert comp1["pill_count"] == 9
+    assert comp1["reminder"] == "Đã xác nhận đúng hạn"
+
+    # Advance clock to 14:00 (6 chunks of 60 minutes = 360 minutes later) -> 2nd dose rings on same slot 1!
+    for _ in range(6):
+        adv2 = client.post("/api/simulation/advance", headers=operator, json={"minutes": 60})
+        assert adv2.status_code == 200
+    comp1 = adv2.json()["compartments"][0]
+    assert comp1["buzzer_on"] is True
+    assert comp1["pill_count"] == 9
+    assert comp1["medication_name"] == "Bịch thuốc huyết áp"
+
+    # Patient takes 2nd pouch from same compartment
+    client.post("/api/simulation/events", headers=operator, json={"compartment_id": 1, "event_type": "LID_OPENED"})
+    client.post("/api/simulation/events", headers=operator, json={"compartment_id": 1, "event_type": "WEIGHT_READING", "payload": {"weight_g": 4.0}})
+    closed2 = client.post("/api/simulation/events", headers=operator, json={"compartment_id": 1, "event_type": "LID_CLOSED"}).json()
+    comp1 = closed2["compartments"][0]
+    assert comp1["buzzer_on"] is False
+    assert comp1["pill_count"] == 8
+    assert comp1["reminder"] == "Đã xác nhận đúng hạn"
+
+

@@ -190,6 +190,14 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
         compartment = dict(stored)
         current = active_by_slot.get(compartment["slot"])
         latest = latest_by_slot.get(compartment["slot"])
+        slot_schedules = [s for s in active_schedules if s.slot == compartment["slot"]]
+        if current:
+            occurrence, sched = current
+            compartment["medication_name"] = sched.medication_name
+        elif slot_schedules:
+            compartment["medication_name"] = slot_schedules[0].medication_name
+        compartment["schedule_times"] = [s.time for s in slot_schedules]
+        compartment["schedule_count"] = len(slot_schedules)
         if current:
             occurrence, _ = current
             reminder = {
@@ -773,6 +781,42 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                     action = "đã mở" if new_open else "đã đóng"
                     raise HTTPException(status_code=409, detail=f"Nắp ngăn {target_slot} {action}")
                 compartment["lid_open"] = new_open
+
+                # Khi đóng nắp ngăn, nếu thuốc đã được lấy ra trong cữ nhắc hiện tại:
+                # Hệ thống tự động xác nhận liều và tắt còi báo/đèn LED ngay lập tức mà không cần nhấn nút.
+                if not new_open and compartment.get("dose_taken"):
+                    now = local_wall_time(parse_virtual_clock(state.virtual_clock))
+                    due = db.scalar(
+                        select(DoseOccurrence)
+                        .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+                        .where(
+                            MedicationSchedule.slot == target_slot,
+                            MedicationSchedule.patient_id == state.patient_id,
+                            DoseOccurrence.clock_mode == state.clock_mode,
+                            DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
+                            DoseOccurrence.scheduled_at <= now,
+                        )
+                        .order_by(DoseOccurrence.scheduled_at.asc(), DoseOccurrence.id.asc())
+                        .limit(1)
+                    )
+                    if due is not None:
+                        occurrence_id = due.id
+                        due.confirmed_at = now
+                        due.status = "confirmed_late" if now - due.scheduled_at >= timedelta(minutes=5) else "confirmed_on_time"
+                        compartment["dose_taken"] = False
+                        extra_payload["auto_confirmed"] = True
+                        extra_payload["trigger"] = "LID_CLOSED"
+                        auto_uuid = str(uuid5(NAMESPACE_URL, f"smart-pill-box:{due.id}:auto-confirm:{event_uuid}"))
+                        record_device_event(
+                            db,
+                            event_uuid=auto_uuid,
+                            event_type="DOSE_CONFIRMED",
+                            slot=target_slot,
+                            virtual_time=state.virtual_clock,
+                            occurrence_id=due.id,
+                            patient_id=state.patient_id,
+                            extra_payload={"auto_confirmed": True, "trigger": "LID_CLOSED", "caused_by_event": event_uuid},
+                        )
             elif payload.event_type in {"WEIGHT_READING", "WEIGHT_SAMPLE", "WEIGHT_CHANGED"}:
                 new_weight = weight_reading
                 if new_weight is None:
@@ -786,11 +830,12 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 extra_payload["weight_g"] = new_weight
                 if diff >= 0.3:
                     if compartment["pill_count"] <= 0:
-                        raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết gói thuốc chia sẵn")
+                        raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết bịch thuốc chia sẵn")
                     compartment["pill_count"] -= 1
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
+                    compartment["dose_taken"] = True
                 elif diff <= -0.4:
-                    # Tăng trọng lượng đáng kể: nạp thêm gói thuốc
+                    # Tăng trọng lượng đáng kể: nạp thêm bịch thuốc
                     added_pills = max(1, round(abs(diff) / 0.5))
                     compartment["pill_count"] += added_pills
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
@@ -799,14 +844,15 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
             elif payload.event_type in {"PILL_DISPENSED", "PILL_REMOVED"}:
                 if not compartment["lid_open"]:
-                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy gói thuốc")
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy bịch thuốc")
                 if compartment["pill_count"] <= 0:
-                    raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết gói thuốc chia sẵn")
+                    raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết bịch thuốc chia sẵn")
                 compartment["pill_count"] -= 1
                 compartment["weight_grams"] = round(max(0.0, compartment["weight_grams"] - 0.5), 1)
+                compartment["dose_taken"] = True
             elif payload.event_type in {"PILL_REFILLED", "REFILL"}:
                 if not compartment["lid_open"]:
-                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi nạp thêm gói thuốc")
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi nạp thêm bịch thuốc")
                 refill_count = payload.count or (payload.payload.get("count") if payload.payload else None) or 10
                 refill_count = max(1, int(refill_count))
                 added_weight = round(refill_count * 0.5, 1)
@@ -835,9 +881,18 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 )
                 if due is None:
                     raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} hiện không có lần nhắc cần xác nhận")
+
+                # Nút xác nhận trên vỏ hộp thuốc: bắt buộc người bệnh đã mở nắp và lấy thuốc ra khỏi ngăn
+                if payload.event_type in {"CONFIRM_PRESSED", "CONFIRMED"} and not compartment.get("dose_taken"):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Chưa lấy bịch thuốc khỏi ngăn {target_slot}. Vui lòng mở nắp và lấy bịch thuốc trước khi xác nhận!",
+                    )
+
                 occurrence_id = due.id
                 due.confirmed_at = now
                 due.status = "confirmed_late" if now - due.scheduled_at >= timedelta(minutes=5) else "confirmed_on_time"
+                compartment["dose_taken"] = False
 
             now_wall = local_wall_time(parse_virtual_clock(state.virtual_clock))
             if occurrence_id is None:

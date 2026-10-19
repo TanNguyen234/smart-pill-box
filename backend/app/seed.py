@@ -15,9 +15,9 @@ DEFAULT_SIMULATION_CLOCK = "2026-10-09T07:59:00+07:00"
 
 def default_compartments() -> list[dict]:
     return [
-        {"slot": 1, "medication_name": "Thuốc A", "pill_count": 10, "weight_grams": 5.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ"},
-        {"slot": 2, "medication_name": "Thuốc B", "pill_count": 8, "weight_grams": 4.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ"},
-        {"slot": 3, "medication_name": "Thuốc C", "pill_count": 12, "weight_grams": 6.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ"},
+        {"slot": 1, "medication_name": "Bịch thuốc cữ sáng", "pill_count": 10, "weight_grams": 5.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ", "dose_taken": False},
+        {"slot": 2, "medication_name": "Bịch thuốc cữ trưa", "pill_count": 8, "weight_grams": 4.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ", "dose_taken": False},
+        {"slot": 3, "medication_name": "Bịch thuốc cữ tối", "pill_count": 12, "weight_grams": 6.0, "lid_open": False, "led": "Tắt", "reminder": "Chưa đến giờ", "dose_taken": False},
     ]
 
 
@@ -58,9 +58,9 @@ def seed_demo(session_factory, demo_password: str) -> None:
 
         if not db.scalar(select(MedicationSchedule.id).limit(1)):
             for name, slot, schedule_time in (
-                ("Thuốc A", 1, "08:00"),
-                ("Thuốc B", 2, "12:00"),
-                ("Thuốc C", 3, "20:00"),
+                ("Bịch thuốc cữ sáng", 1, "08:00"),
+                ("Bịch thuốc cữ trưa", 2, "12:00"),
+                ("Bịch thuốc cữ tối", 3, "20:00"),
             ):
                 db.add(
                     MedicationSchedule(
@@ -74,7 +74,7 @@ def seed_demo(session_factory, demo_password: str) -> None:
             db.add(
                 MedicationSchedule(
                     patient_id=patients["caregiver-b@example.test"].id,
-                    medication_name="Thuốc mẫu B",
+                    medication_name="Bịch thuốc cữ sáng",
                     slot=2,
                     time="09:00",
                     active=True,
