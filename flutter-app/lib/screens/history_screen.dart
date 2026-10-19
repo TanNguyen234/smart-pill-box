@@ -175,7 +175,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return 'Đóng nắp ngăn thuốc';
       case 'PILL_REMOVED':
       case 'PILL_DISPENSED':
-        return 'Lấy gói thuốc khỏi ngăn';
+        return 'Lấy bịch thuốc khỏi ngăn';
       case 'WEIGHT_READING':
       case 'WEIGHT_SAMPLE':
       case 'WEIGHT_CHANGED':
@@ -194,7 +194,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return 'Đặt lại trạng thái mô phỏng';
       case 'PILL_REFILLED':
       case 'REFILL':
-        return 'Nạp thêm gói thuốc vào ngăn';
+        return 'Nạp thêm bịch thuốc vào ngăn';
       default:
         return eventType;
     }
@@ -503,7 +503,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Các thao tác mở nắp, lấy gói thuốc và bấm xác nhận trên hộp sẽ xuất hiện tại đây theo thời gian thực.',
+                                  'Các thao tác mở nắp, lấy bịch thuốc và bấm xác nhận trên hộp sẽ xuất hiện tại đây theo thời gian thực.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 13,
@@ -738,7 +738,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                             const SizedBox(
                                                                 width: 4),
                                                             Text(
-                                                              '+$pillsAdded gói',
+                                                              '+$pillsAdded bịch',
                                                               style:
                                                                   const TextStyle(
                                                                 fontSize: 11,

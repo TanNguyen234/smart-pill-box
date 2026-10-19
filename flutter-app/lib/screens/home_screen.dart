@@ -119,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => _CreateScheduleDialog(
         patients: widget.patients,
         initialPatientId: _selectedPatientId ?? (widget.patients.isNotEmpty ? widget.patients.first.id : 1),
+        existingSchedules: widget.schedules,
         onSubmit: widget.onCreateSchedule,
       ),
     );
@@ -136,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (_) => _EditScheduleDialog(
         schedule: schedule,
+        existingSchedules: widget.schedules,
         onSubmit: (values) => widget.onUpdateSchedule(schedule.id, values),
       ),
     );
@@ -662,6 +664,28 @@ class _HomeScreenState extends State<HomeScreen> {
             'Bật/tắt công tắc hoặc bấm vào biểu tượng bút để chỉnh sửa.',
             style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
           ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFBBF7D0)),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Color(0xFF16A34A), size: 18),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Ngăn thuốc hoạt động bằng cảm biến tải trọng (không đếm viên rời). Người nhà chia sẵn thuốc vào từng bịch nhỏ. Một ngăn có thể chứa nhiều bịch nếu cùng loại và số lượng thuốc (VD: cữ sáng và tối uống giống nhau), cho phép cài nhiều lịch trên cùng 1 ngăn để tiết kiệm không gian hộp.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF166534), height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
           if (filteredSchedules.isEmpty)
             _emptyCard(context, 'Chưa có lịch. Nhấn “Thêm lịch” bên dưới để tạo.')
@@ -852,10 +876,12 @@ class _HomeScreenState extends State<HomeScreen> {
 class _EditScheduleDialog extends StatefulWidget {
   const _EditScheduleDialog({
     required this.schedule,
+    required this.existingSchedules,
     required this.onSubmit,
   });
 
   final MedicationSchedule schedule;
+  final List<MedicationSchedule> existingSchedules;
   final Future<void> Function(Map<String, dynamic> values) onSubmit;
 
   @override
@@ -893,6 +919,10 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final otherSlotSchedules = widget.existingSchedules
+        .where((s) => s.id != widget.schedule.id && s.patientId == widget.schedule.patientId && s.slot == _slot)
+        .toList();
+
     return AlertDialog(
       title: const Text('Chỉnh sửa lịch uống thuốc'),
       content: Form(
@@ -904,8 +934,13 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Tên thuốc / Gói chia sẵn'),
-                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên thuốc / gói chia sẵn' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Tên bịch thuốc / Cữ uống',
+                  hintText: 'VD: Bịch cữ sáng, Bịch tim mạch...',
+                  helperText: 'Chia sẵn các loại thuốc của cữ này vào từng bịch trước khi bỏ vào ngăn.',
+                  helperMaxLines: 2,
+                ),
+                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên bịch thuốc / cữ uống' : null,
               ),
               const SizedBox(height: 14),
               const Text('Ngăn thuốc:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -922,6 +957,30 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
                   onSelectionChanged: (newSet) => setState(() => _slot = newSet.first),
                 ),
               ),
+              if (otherSlotSchedules.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.inventory_2_outlined, size: 16, color: Color(0xFF1D4ED8)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Ngăn $_slot đang có ${otherSlotSchedules.length} cữ khác: ${otherSlotSchedules.map((s) => s.time).join(", ")} (${otherSlotSchedules.first.medicationName}). Đảm bảo các bịch thuốc xếp chung ngăn có cùng loại và cùng số lượng.',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF1E3A8A), height: 1.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               OutlinedButton.icon(
                 onPressed: () async {
@@ -1013,11 +1072,13 @@ class _CreateScheduleDialog extends StatefulWidget {
   const _CreateScheduleDialog({
     required this.patients,
     required this.initialPatientId,
+    required this.existingSchedules,
     required this.onSubmit,
   });
 
   final List<Patient> patients;
   final int initialPatientId;
+  final List<MedicationSchedule> existingSchedules;
   final Future<void> Function(Map<String, dynamic> values) onSubmit;
 
   @override
@@ -1050,6 +1111,9 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
   @override
   Widget build(BuildContext context) {
     final patient = widget.patients.where((p) => p.id == _patientId).firstOrNull;
+    final slotSchedules = widget.existingSchedules
+        .where((s) => s.patientId == _patientId && s.slot == _slot)
+        .toList();
 
     return AlertDialog(
       title: const Text('Thêm lịch uống thuốc'),
@@ -1086,8 +1150,13 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Tên thuốc / Gói chia sẵn'),
-                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên thuốc / gói chia sẵn' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Tên bịch thuốc / Cữ uống',
+                  hintText: 'VD: Bịch cữ sáng, Bịch tim mạch...',
+                  helperText: 'Chia sẵn các loại thuốc của cữ này vào từng bịch trước khi bỏ vào ngăn.',
+                  helperMaxLines: 2,
+                ),
+                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên bịch thuốc / cữ uống' : null,
               ),
               const SizedBox(height: 14),
               const Text('Ngăn thuốc:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -1104,6 +1173,61 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                   onSelectionChanged: (newSet) => setState(() => _slot = newSet.first),
                 ),
               ),
+              if (slotSchedules.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 16, color: Color(0xFF1D4ED8)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Ngăn $_slot đang có ${slotSchedules.length} cữ: ${slotSchedules.map((s) => s.time).join(", ")}',
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF1E40AF)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Đang chứa: "${slotSchedules.first.medicationName}". Có thể tạo thêm cữ uống chung ngăn này nếu mỗi bịch có cùng loại và cùng số lượng thuốc.',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF1E3A8A), height: 1.3),
+                      ),
+                      if (_nameController.text.trim().isEmpty || _nameController.text.trim() != slotSchedules.first.medicationName) ...[
+                        const SizedBox(height: 6),
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              _nameController.text = slotSchedules.first.medicationName;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFF93C5FD)),
+                            ),
+                            child: Text(
+                              'Dùng cùng tên: ${slotSchedules.first.medicationName}',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               OutlinedButton.icon(
                 onPressed: () async {
