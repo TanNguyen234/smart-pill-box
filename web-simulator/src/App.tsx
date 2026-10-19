@@ -45,6 +45,9 @@ type Compartment = {
   reminder: string
   current_occurrence_id: number | null
   can_confirm: boolean
+  dose_taken?: boolean
+  schedule_times?: string[]
+  schedule_count?: number
 }
 type Schedule = { id: number; medication_name: string; slot: number; time: string; days_of_week?: string | null }
 type SimulationEvent = {
@@ -197,17 +200,23 @@ function eventLabel(event: SimulationEvent) {
   if (event.event_type === 'SIMULATION_RESET') return 'Đặt lại hộp mô phỏng'
   if (event.event_type === 'PILL_REFILLED' || event.event_type === 'REFILL') {
     const pills = event.payload.count ?? event.payload.pills_added ?? 10
-    return `Nạp thêm gói thuốc (+${pills} gói)`
+    return `Nạp thêm bịch thuốc (+${pills} bịch)`
   }
   if (event.event_type === 'WEIGHT_READING') {
     const weight = event.payload.weight_g
     return typeof weight === 'number' ? `Cảm biến tải trọng: ${weight.toFixed(1)} g` : 'Cảm biến tải trọng đọc khối lượng'
   }
   if (event.event_type === 'CONFIRM_PRESSED') return 'Nút hộp: Bấm xác nhận uống thuốc'
+  if (event.event_type === 'DOSE_CONFIRMED') {
+    if (event.payload?.trigger === 'LID_CLOSED' || event.payload?.auto_confirmed) {
+      return 'Tự động xác nhận uống thuốc khi đóng nắp'
+    }
+    return 'Người dùng xác nhận đã uống'
+  }
   return {
     LID_OPENED: 'Mở nắp ngăn',
     LID_CLOSED: 'Đóng nắp ngăn',
-    PILL_DISPENSED: 'Lấy 1 gói thuốc mô phỏng',
+    PILL_DISPENSED: 'Lấy 1 bịch thuốc mô phỏng',
     DOSE_CONFIRMED: 'Người dùng xác nhận đã uống',
   }[event.event_type] ?? event.event_type
 }
@@ -352,8 +361,8 @@ function App() {
     modeEnsuredRef.current = false
   }
 
-  async function sendEvent(slot: number, eventType: EventType, extraPayload: Record<string, unknown> = {}) {
-    if (!token) return
+  async function sendEvent(slot: number, eventType: EventType, extraPayload: Record<string, unknown> = {}): Promise<DeviceState | null> {
+    if (!token) return null
     setBusySlot(slot)
     setActionMessage('')
     try {
@@ -370,9 +379,11 @@ function App() {
       })
       setDevice(updated)
       setConnectionError('')
+      return updated
     } catch (error) {
       if (error instanceof ApiRequestError) setActionMessage(error.message)
       else setConnectionError(error instanceof Error ? error.message : 'Không lưu được thao tác')
+      return null
     } finally {
       setBusySlot(null)
     }
@@ -395,12 +406,12 @@ function App() {
   }
 
   async function confirmDose(item: Compartment) {
-    await sendEvent(
+    const updated = await sendEvent(
       item.slot,
       'CONFIRM_PRESSED',
       item.current_occurrence_id ? { occurrence_id: item.current_occurrence_id } : {}
     )
-    if (audioEnabled) playConfirmationChime()
+    if (updated && audioEnabled) playConfirmationChime()
   }
 
   async function changeClockMode(mode: 'SIMULATION' | 'REALTIME') {
@@ -672,18 +683,21 @@ function App() {
                       <span className="led-text">{item.led === 'Bật' ? 'ĐÈN BẬT' : 'ĐÈN TẮT'}</span>
                     </div>
 
-                    <div className="pill-well" aria-label={`${item.pill_count} gói thuốc trong ngăn`}>
+                    <div className="pill-well" aria-label={`${item.pill_count} bịch thuốc trong ngăn`}>
                       <div className="pills-scatter">
                         {Array.from({ length: Math.min(item.pill_count, 8) }, (_, pill) => (
-                          <div className={`pill-unit pill-type-${item.slot}`} key={pill}>
-                            <span className="pill-half-left" />
-                            <span className="pill-half-right" />
+                          <div className={`pouch-unit pouch-type-${item.slot}`} key={pill} title="Bịch thuốc phân liều (chứa các viên thuốc của cữ)">
+                            <span className="pouch-seal" />
+                            <span className="pouch-pill-dots">
+                              <span className="dot dot-1" />
+                              <span className="dot dot-2" />
+                            </span>
                           </div>
                         ))}
                       </div>
                       <div className="pill-counter-tag">
                         <strong>{item.pill_count}</strong>
-                        <span>gói chia sẵn</span>
+                        <span>bịch chia sẵn</span>
                       </div>
                     </div>
                   </div>
@@ -691,7 +705,18 @@ function App() {
 
                 <div className="medication-title">
                   <h3>{item.medication_name}</h3>
-                  <span className="medication-type-tag">Cữ uống theo lịch</span>
+                  <div className="medication-tags-row">
+                    <span className="medication-type-tag">Bịch thuốc chia sẵn</span>
+                    {item.schedule_times && item.schedule_times.length > 1 ? (
+                      <span className="shared-slot-tag" title="Ngăn này dùng chung cho nhiều cữ trong ngày có cùng loại và cùng số lượng thuốc để tiết kiệm ngăn">
+                        Dùng chung · {item.schedule_times.length} cữ: {item.schedule_times.join(' · ')}
+                      </span>
+                    ) : item.schedule_times && item.schedule_times.length === 1 ? (
+                      <span className="single-schedule-tag">
+                        Cữ uống: {item.schedule_times[0]}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="card-metrics">
@@ -731,7 +756,20 @@ function App() {
                     className={`lid-button ${item.lid_open ? 'secondary-button' : 'primary-button'}`}
                     type="button"
                     disabled={busySlot === item.slot || busyControl}
-                    onClick={() => void sendEvent(item.slot, item.lid_open ? 'LID_CLOSED' : 'LID_OPENED')}
+                    onClick={async () => {
+                      const wasBuzzerOn = item.buzzer_on
+                      const nextEvent = item.lid_open ? 'LID_CLOSED' : 'LID_OPENED'
+                      const updated = await sendEvent(item.slot, nextEvent)
+                      if (
+                        updated &&
+                        nextEvent === 'LID_CLOSED' &&
+                        wasBuzzerOn &&
+                        !updated.compartments.find((c) => c.slot === item.slot)?.buzzer_on &&
+                        audioEnabled
+                      ) {
+                        playConfirmationChime()
+                      }
+                    }}
                   >
                     <span className="btn-icon">{item.lid_open ? <IconLidClosed size={16} /> : <IconLidOpen size={16} />}</span>
                     <span>{busySlot === item.slot ? 'Đang gửi…' : item.lid_open ? 'Đóng nắp ngăn' : 'Mở nắp ngăn'}</span>
@@ -741,10 +779,10 @@ function App() {
                     type="button"
                     disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl}
                     onClick={() => void takeOnePill(item)}
-                    title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết gói thuốc chia sẵn' : undefined}
+                    title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết bịch thuốc chia sẵn' : 'Lấy 1 bịch thuốc chia sẵn'}
                   >
                     <span className="btn-icon"><IconPill size={16} /></span>
-                    <span>Lấy 1 gói thuốc</span>
+                    <span>Lấy 1 bịch thuốc</span>
                     <span className="btn-weight-change">−0,5 g</span>
                   </button>
                   <button
@@ -752,10 +790,10 @@ function App() {
                     type="button"
                     disabled={!item.lid_open || busySlot === item.slot || busyControl}
                     onClick={() => void refillPills(item)}
-                    title={!item.lid_open ? 'Mở nắp ngăn trước khi nạp thêm gói thuốc' : 'Nạp thêm 10 gói thuốc chia sẵn (+5.0 g)'}
+                    title={!item.lid_open ? 'Mở nắp ngăn trước khi nạp thêm bịch thuốc' : 'Nạp thêm 10 bịch thuốc chia sẵn (+5.0 g)'}
                   >
                     <span className="btn-icon"><IconRefresh size={15} /></span>
-                    <span>Nạp thêm 10 gói</span>
+                    <span>Nạp thêm 10 bịch</span>
                     <span className="btn-weight-change">+5,0 g</span>
                   </button>
                   <button
@@ -763,7 +801,7 @@ function App() {
                     type="button"
                     disabled={!item.lid_open || busySlot === item.slot || busyControl}
                     onClick={() => void injectNoise(item)}
-                    title="Thử nhiễu tải trọng 0.1g (kiểm thử rung động, không làm giảm gói thuốc)"
+                    title="Thử nhiễu tải trọng 0.1g (kiểm thử rung động, không làm giảm bịch thuốc)"
                   >
                     <span className="btn-icon"><IconVibrate size={15} /></span>
                     <span>Thử nhiễu cân</span>
@@ -775,6 +813,7 @@ function App() {
                       type="button"
                       disabled={busySlot === item.slot || busyControl}
                       onClick={() => void confirmDose(item)}
+                      title={!item.dose_taken ? 'Lưu ý: Mở nắp và lấy bịch thuốc khỏi ngăn trước khi nhấn xác nhận' : 'Đã lấy bịch thuốc. Nhấn để tắt còi và xác nhận đã uống'}
                     >
                       <span className="confirm-glow" />
                       <span className="btn-icon"><IconCheckCircle size={16} /></span>
@@ -782,7 +821,7 @@ function App() {
                     </button>
                   )}
                 </div>
-                <p className="safety-note">Cảm biến chỉ ghi nhận khi thao tác thật • Không chứng minh đã uống</p>
+                <p className="safety-note">Cảm biến chỉ cân tổng tải trọng • Ngăn chứa được nhiều bịch nếu cùng loại và số lượng thuốc • Dùng chung ngăn cho các cữ giống nhau giúp tiết kiệm không gian hộp</p>
               </article>
             ))}
 

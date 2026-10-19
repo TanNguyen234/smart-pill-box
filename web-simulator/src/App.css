@@ -515,6 +515,56 @@
   gap: 6px;
   flex-wrap: wrap;
 }
+.pouch-unit {
+  width: 32px;
+  height: 24px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(241, 245, 249, 0.9) 100%);
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-10deg);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+.pouch-unit:nth-child(even) { transform: rotate(15deg); }
+.pouch-unit:nth-child(3n) { transform: rotate(-25deg); }
+.pouch-seal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-bottom: 0.5px dashed rgba(255, 255, 255, 0.6);
+}
+.pouch-type-1 .pouch-seal { background: #0284c7; }
+.pouch-type-2 .pouch-seal { background: #ea580c; }
+.pouch-type-3 .pouch-seal { background: #059669; }
+.pouch-pill-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 3px;
+}
+.pouch-pill-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.pouch-type-1 .dot-1 { background: #38bdf8; }
+.pouch-type-1 .dot-2 { background: #fb7185; }
+.pouch-type-2 .dot-1 { background: #fb923c; }
+.pouch-type-2 .dot-2 { background: #facc15; }
+.pouch-type-3 .dot-1 { background: #34d399; }
+.pouch-type-3 .dot-2 { background: #818cf8; }
+
+/* Backward compatibility for any remaining pill-unit */
 .pill-unit {
   width: 22px;
   height: 10px;
@@ -531,8 +581,6 @@
   flex: 1;
   height: 100%;
 }
-
-/* COLOR-CODED PILLS PER SLOT */
 .pill-type-1 .pill-half-left { background: #0284c7; }
 .pill-type-1 .pill-half-right { background: #ffffff; }
 .pill-type-2 .pill-half-left { background: #f97316; }
@@ -568,10 +616,39 @@
   color: #0f172a;
   letter-spacing: -0.01em;
 }
+.medication-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
 .medication-type-tag {
   font-size: 11px;
   color: #64748b;
   font-weight: 500;
+}
+.shared-slot-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: -0.01em;
+}
+.single-schedule-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 /* CARD METRICS & OLED SCALE READOUT */
