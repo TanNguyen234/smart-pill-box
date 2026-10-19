@@ -9,7 +9,7 @@
 > - **Mô hình gói thuốc chia sẵn thực tế:** Chuẩn hóa việc phân chia và quản lý theo từng cữ/gói thuốc chia sẵn thay vì đếm viên rời.
 > - **Chế độ Thời gian thực (REALTIME) mặc định:** Tự động điều phối và kiểm tra nhắc thuốc theo múi giờ Việt Nam (GMT+7) liên tục.
 > - **Còi báo âm thanh y tế Web Audio API:** Âm thanh còi cảnh báo y tế tự sinh theo nhịp khẩn cấp, có chế độ phát thử.
-> - **Lịch uống linh hoạt:** Tùy chọn uống mỗi ngày, 2-4-6, 3-5-7 hoặc chọn từng thứ trong tuần.
+> - **Lịch uống linh hoạt & Tối ưu ngăn chứa:** Tùy chọn thứ trong tuần; hỗ trợ gán nhiều cữ uống trong ngày vào cùng 1 ngăn nếu các bịch thuốc có cùng loại và số lượng để tiết kiệm không gian hộp.
 > - **Quản lý toàn diện:** Cho phép xóa lịch uống và xóa sạch nhật ký sự kiện đồng bộ trên Backend, Flutter App và Web Simulator.
 
 ---
@@ -265,10 +265,15 @@ Hộp đóng nắp, tải trọng 5.0g (10 gói chia sẵn x 0.5g), Đèn LED t�
 └─ Người thân: Bấm vào cảnh báo -> Chọn giải pháp xử lý nhanh ("Đã gọi điện nhắc") -> Trạng thái chuyển "Đã kiểm tra"
    │
    ▼ (Thao tác thực tế của người bệnh tại hộp thuốc)
-[BỆNH NHÂN UỐNG THUỐC]:
-1. Mở nắp ngăn: Gửi sự kiện LID_OPENED (Nắp hiển thị trạng thái Mở).
-2. Lấy 1 gói thuốc: Trọng lượng giảm 0.5g -> Cảm biến cân gửi WEIGHT_READING (Số gói giảm còn 9 gói).
-3. Bấm nút xác nhận trên vỏ hộp: Gửi sự kiện CONFIRM_PRESSED.
+[BỆNH NHÂN UỐNG THUỐC (2 CÁCH TIỆN LỢI & AN TOÀN)]:
+Cách 1 — Tự động thông minh (Zero-Friction UX - Khuyến nghị):
+1. Mở nắp ngăn: Gửi sự kiện LID_OPENED (Nắp mở, chuẩn bị lấy thuốc).
+2. Lấy 1 bịch thuốc: Trọng lượng giảm -> Cảm biến cân ghi nhận WEIGHT_READING (Số bịch giảm, ghi nhận đã lấy thuốc).
+3. Đóng nắp ngăn: Gửi sự kiện LID_CLOSED -> Hệ thống tự động xác nhận uống thuốc thành công, còi báo tắt, chuông êm dịu vang lên.
+
+Cách 2 — Xác nhận thủ công có chống gian lận (Cheat-prevention):
+- Người bệnh mở nắp, lấy thuốc và bấm nút "Xác nhận đã uống" (CONFIRM_PRESSED).
+- Hệ thống bắt buộc phải phát hiện bịch thuốc đã được lấy ra khỏi ngăn trước khi xác nhận. Nếu chưa lấy bịch thuốc mà đã bấm nút, hệ thống từ chối (409 Conflict), còi báo tiếp tục kêu nhắc nhở.
 └─ Kết quả: Lượt uống chuyển thành "Đã xác nhận đúng hạn" (hoặc trễ), Đèn LED tắt, Còi tắt hoàn toàn.
 ```
 
@@ -291,7 +296,7 @@ Hộp đóng nắp, tải trọng 5.0g (10 gói chia sẵn x 0.5g), Đèn LED t�
 | `GET` | `/api/events` | Người thân | Xem nhật ký sự kiện cảm biến hộp thuốc (lọc theo ngăn/ngày). |
 | `DELETE` | `/api/events` | Người thân | **Xóa sạch nhật ký sự kiện** trên máy chủ và thiết bị. |
 | `GET` | `/api/simulation/state` | Người vận hành | Lấy toàn bộ trạng thái thiết bị (đồng hồ, cân, LED, nắp, còi, số gói). |
-| `POST` | `/api/simulation/events` | Người vận hành | Gửi thao tác phần cứng (`LID_OPENED`, `WEIGHT_READING`, `CONFIRM_PRESSED`, `PILL_REFILLED`). |
+| `POST` | `/api/simulation/events` | Người vận hành | Gửi thao tác phần cứng (`LID_OPENED`, `LID_CLOSED`, `WEIGHT_READING`, `CONFIRM_PRESSED`, `PILL_REFILLED`). |
 | `POST` | `/api/simulation/mode` | Người vận hành | Chuyển đổi giữa chế độ `REALTIME` (thời gian thực) và `SIMULATION` (mô phỏng). |
 | `POST` | `/api/simulation/advance`| Người vận hành | Tiến đồng hồ mô phỏng thêm $N$ phút. |
 | `POST` | `/api/simulation/reset` | Người vận hành | Đặt lại trạng thái mô phỏng ban đầu. |
@@ -306,7 +311,7 @@ Toàn bộ hệ thống được kiểm thử tự động, nghiêm ngặt qua 4
 ========================================================================================
                              BÁO CÁO KIỂM THỬ HỆ THỐNG TOÀN DIỆN
 ========================================================================================
- [PASS] Backend Pytest Suite               : 21/21 PASSED    (100% Logic, Auth, Lịch, Realtime, Refill)
+ [PASS] Backend Pytest Suite               : 23/23 PASSED    (100% Logic, Auth, Lịch, Realtime, Refill, Auto-Confirm, Multi-Dose Slot)
  [PASS] Flutter Widget & Unit Tests        : 3/3 PASSED      (100% Đầy đủ 5 tabs, Xóa lịch, Xóa sự kiện)
  [PASS] Flutter Static Analysis            : 0 ISSUES        (Hoàn toàn sạch cảnh báo/linter)
  [PASS] Web Simulator Production Build     : PASSED          (TypeScript tsc -b + Vite build thành công)
