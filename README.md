@@ -1,58 +1,63 @@
 # Smart Pill Box — Hệ Thống Hộp Thuốc Thông Minh IoT
 
-> **Hệ sinh thái y tế toàn diện:** Backend FastAPI + Web Simulator phần cứng 3D + Ứng dụng di động Flutter dành cho người thân/người chăm sóc. 
-> 
-> ✨ **Điểm nổi bật mới nhất:**
-> - 🇻🇳 **100% Tiếng Việt** chuẩn y tế, loại bỏ hoàn toàn các từ tiếng Anh rải rác.
-> - 💊 **Mô hình gói thuốc chia sẵn thực tế:** Người thân chia sẵn từng cữ/bịch thuốc, kiểm soát số lượng gói và nạp thêm tiện lợi.
-> - ⏰ **Chế độ Thời gian thực (REALTIME) mặc định:** Tự động kiểm tra và nhắc nhở theo giờ Việt Nam (GMT+7) liên tục.
-> - 🔊 **Còi báo âm thanh y tế Web Audio API:** Âm thanh rõ ràng, tự động lặp theo nhịp còi khẩn cấp và có nút phát thử.
-> - 📅 **Lịch uống linh hoạt:** Tùy chọn uống mỗi ngày, 2-4-6, 3-5-7 hoặc chọn từng thứ trong tuần.
-> - 🗑️ **Quản lý toàn diện:** Cho phép xóa lịch uống thuốc và xóa sạch nhật ký lịch sử sự kiện trên cả App và Web Simulator.
+> [!NOTE]
+> **Hệ sinh thái y tế toàn diện:** Backend FastAPI + Web Simulator phần cứng 3D + Ứng dụng di động Flutter dành cho người thân/người chăm sóc.
+
+> [!IMPORTANT]
+> **Quy chuẩn cập nhật mới nhất:**
+> - **100% Tiếng Việt chuẩn y tế:** Loại bỏ hoàn toàn các thuật ngữ tiếng Anh rải rác trên giao diện.
+> - **Mô hình gói thuốc chia sẵn thực tế:** Chuẩn hóa việc phân chia và quản lý theo từng cữ/gói thuốc chia sẵn thay vì đếm viên rời.
+> - **Chế độ Thời gian thực (REALTIME) mặc định:** Tự động điều phối và kiểm tra nhắc thuốc theo múi giờ Việt Nam (GMT+7) liên tục.
+> - **Còi báo âm thanh y tế Web Audio API:** Âm thanh còi cảnh báo y tế tự sinh theo nhịp khẩn cấp, có chế độ phát thử.
+> - **Lịch uống linh hoạt:** Tùy chọn uống mỗi ngày, 2-4-6, 3-5-7 hoặc chọn từng thứ trong tuần.
+> - **Quản lý toàn diện:** Cho phép xóa lịch uống và xóa sạch nhật ký sự kiện đồng bộ trên Backend, Flutter App và Web Simulator.
 
 ---
 
-## 📑 Mục lục
-1. [Khởi động siêu tốc (1-Click & 3 Phút)](#1-khởi-động-siêu-tốc-1-click--3-phút)
+## Mục lục
+1. [Khởi động nhanh](#1-khởi-động-nhanh)
 2. [Địa chỉ dịch vụ & Tài khoản mẫu](#2-địa-chỉ-dịch-vụ--tài-khoản-mẫu)
 3. [Kiến trúc hệ thống & Stack công nghệ](#3-kiến-trúc-hệ-thống--stack-công-nghệ)
 4. [Hướng dẫn cài đặt chi tiết từng phân hệ](#4-hướng-dẫn-cài-đặt-chi-tiết-từng-phân-hệ)
-5. [Kịch bản vận hành chuẩn y tế (Timeline Demo)](#5-kịch-bản-vận-hành-chuẩn-y-tế-timeline-demo)
+5. [Kịch bản vận hành chuẩn y tế](#5-kịch-bản-vận-hành-chuẩn-y-tế)
 6. [Đặc tả API & Quy chuẩn kỹ thuật](#6-đặc-tả-api--quy-chuẩn-kỹ-thuật)
-7. [Bằng chứng kiểm thử & Quality Gates (100% Pass)](#7-bằng-chứng-kiểm-thử--quality-gates-100-pass)
+7. [Bằng chứng kiểm thử & Quality Gates](#7-bằng-chứng-kiểm-thử--quality-gates)
 
 ---
 
-## 1. Khởi động siêu tốc (1-Click & 3 Phút)
+## 1. Khởi động nhanh
 
-### ⚡ Yêu cầu môi trường tối thiểu:
-- **Python 3.10+** (đã cài đặt và có trong PATH)
+### Yêu cầu môi trường tối thiểu
+- **Python 3.10+**
 - **Node.js 18+** & npm
 - **Flutter SDK 3.x+**
 
 ---
 
-### Cách 1: Khởi động 1-Click trên Windows (Khuyến nghị 🌟)
+### Cách 1: Khởi động 1-Click trên Windows (Khuyến nghị)
 
-1. **Cài đặt lần đầu tiên:**
-   Nhấp đúp chuột vào file:
+> [!TIP]
+> Sử dụng các tệp batch tự động để thiết lập và chạy toàn bộ dự án chỉ với 2 lần nhấp chuột:
+
+1. **Cài đặt lần đầu:**
+   Chạy tệp:
    ```cmd
    setup.bat
    ```
-   *(Script sẽ tự động tạo Python `.venv`, cài thư viện `requirements.txt`, khởi tạo database SQLite mẫu, cài đặt gói npm cho Simulator và tải package cho Flutter App).*
+   *Script tự động thiết lập Python `.venv`, cài đặt `requirements.txt`, tạo `.env`, nạp dữ liệu SQLite mẫu, cài đặt npm packages và Flutter dependencies.*
 
-2. **Chạy toàn bộ hệ thống:**
-   Nhấp đúp chuột vào file:
+2. **Khởi chạy cả 3 dịch vụ:**
+   Chạy tệp:
    ```cmd
    start_all.bat
    ```
-   *(Hệ thống sẽ tự động mở 3 cửa sổ terminal chạy đồng thời: Backend :8000, Web Simulator :5173 và Flutter Web :8080).*
+   *Mở đồng thời 3 cửa sổ riêng biệt: Backend (:8000), Web Simulator (:5173), Flutter Web (:8080).*
 
 ---
 
-### Cách 2: Khởi động nhanh bằng dòng lệnh (CLI)
+### Cách 2: Khởi động thủ công qua dòng lệnh
 
-#### Cửa sổ 1 — Backend API (FastAPI):
+#### Cửa sổ 1 — Backend API (FastAPI)
 ```powershell
 cd backend
 python -m venv .venv
@@ -63,14 +68,14 @@ python scripts\seed_demo.py
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-#### Cửa sổ 2 — Web Simulator (React + TypeScript):
+#### Cửa sổ 2 — Web Simulator (React + TypeScript)
 ```powershell
 cd web-simulator
 npm install
 npm run dev
 ```
 
-#### Cửa sổ 3 — Flutter Caregiver App (Flutter Web):
+#### Cửa sổ 3 — Flutter Caregiver App (Flutter Web)
 ```powershell
 cd flutter-app
 flutter pub get
@@ -87,14 +92,16 @@ flutter run -d web-server --web-port 8080 --web-hostname 127.0.0.1
 | **Web Simulator** | [http://localhost:5173](http://localhost:5173) | Người vận hành | Bàn điều khiển thiết bị hộp thuốc SIM-001 |
 | **Flutter App (Web)** | [http://localhost:8080](http://localhost:8080) | Người thân | Ứng dụng theo dõi, cài đặt lịch & cảnh báo |
 
-### Danh sách tài khoản thử nghiệm sẵn sàng:
+### Danh sách tài khoản thử nghiệm
+
 | Tài khoản | Email đăng nhập | Mật khẩu mặc định | Mục đích sử dụng |
 | :--- | :--- | :--- | :--- |
-| **Người vận hành (Operator)** | `operator@example.test` | `Password123!` | Đăng nhập trên **Web Simulator** để thao tác mở nắp, lấy thuốc, nạp thuốc, bấm xác nhận và đổi chế độ đồng hồ. |
-| **Người thân A (Caregiver A)** | `caregiver-a@example.test` | `Password123!` | Đăng nhập trên **Flutter App** để quản lý lịch, xem liều hôm nay và nhận cảnh báo của Bệnh nhân A (SIM-001). |
-| **Người thân B (Caregiver B)** | `caregiver-b@example.test` | `Password123!` | Dùng kiểm thử đa người dùng & cách ly dữ liệu bảo mật giữa các gia đình. |
+| **Người vận hành (Operator)** | `operator@example.test` | `Password123!` | Đăng nhập **Web Simulator** để thao tác mở nắp, lấy gói thuốc, nạp thêm, bấm xác nhận và đổi chế độ đồng hồ. |
+| **Người thân A (Caregiver A)** | `caregiver-a@example.test` | `Password123!` | Đăng nhập **Flutter App** để quản lý lịch, theo dõi lượt uống hôm nay và xử lý cảnh báo của Bệnh nhân A (SIM-001). |
+| **Người thân B (Caregiver B)** | `caregiver-b@example.test` | `Password123!` | Kiểm thử đa người dùng & cách ly dữ liệu bảo mật giữa các hồ sơ gia đình. |
 
-*(Trên cả Web Simulator và Flutter App đều có nút **"Điền nhanh"** hỗ trợ đăng nhập 1 chạm tức thì).*
+> [!NOTE]
+> Cả trên Web Simulator và Flutter App đều có nút **"Điền nhanh"** hỗ trợ đăng nhập 1 chạm tiện dụng.
 
 ---
 
@@ -139,11 +146,11 @@ flowchart TD
     TabAlerts -- "PATCH /api/alerts/{id}" --> AlertDispatcher
 ```
 
-### Công nghệ sử dụng:
-* **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0, Pydantic v2, PyJWT, pwdlib (Argon2), Uvicorn.
-* **Web Simulator:** React 18, TypeScript, Vite, CSS 3D Glassmorphism, Web Audio API (Còi hú y tế tự sinh sóng âm thanh, không phụ thuộc file ngoài).
-* **Mobile App:** Flutter 3.x, Dart 3.x, Material Design 3 (Clinical Modernism).
-* **Kiểm thử tự động:** Pytest, Flutter Widget Test, Chrome DevTools Protocol (CDP Automation).
+### Stack công nghệ
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0, Pydantic v2, PyJWT, pwdlib (Argon2), Uvicorn.
+- **Web Simulator:** React 18, TypeScript, Vite, CSS 3D Glassmorphism, Web Audio API.
+- **Mobile App:** Flutter 3.x, Dart 3.x, Material Design 3.
+- **Kiểm thử tự động:** Pytest, Flutter Widget Test, Chrome DevTools Protocol (CDP Automation).
 
 ---
 
@@ -170,25 +177,24 @@ flowchart TD
    pip install -r requirements.txt
    ```
 4. Thiết lập tệp cấu hình `.env`:
-   - Sao chép từ mẫu:
-     ```powershell
-     copy .env.example .env
-     ```
-   - Kiểm tra trong `.env` đã có:
-     ```ini
-     DATABASE_URL=sqlite:///data/smartpill.sqlite3
-     JWT_SECRET=WFRDkdlpF9ovHEYdr1sNSgQC0NBsfY7TrRlznv2K56FKLdge5FDc0WqQCBnU72l-
-     DEMO_PASSWORD=Password123!
-     ```
+   ```powershell
+   copy .env.example .env
+   ```
+   Nội dung trong `.env`:
+   ```ini
+   DATABASE_URL=sqlite:///data/smartpill.sqlite3
+   JWT_SECRET=WFRDkdlpF9ovHEYdr1sNSgQC0NBsfY7TrRlznv2K56FKLdge5FDc0WqQCBnU72l-
+   DEMO_PASSWORD=Password123!
+   ```
 5. Khởi tạo cơ sở dữ liệu mẫu:
    ```bash
    python scripts/seed_demo.py
    ```
-6. Khởi động server:
+6. Khởi động máy chủ:
    ```bash
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
-   > Truy cập Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+   > Tài liệu Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
@@ -205,7 +211,7 @@ flowchart TD
    ```bash
    npm run dev
    ```
-   > Truy cập ứng dụng: [http://localhost:5173](http://localhost:5173)
+   > Truy cập bàn điều khiển: [http://localhost:5173](http://localhost:5173)
 
 ---
 
@@ -219,7 +225,7 @@ flowchart TD
    flutter pub get
    ```
 3. Chạy ứng dụng:
-   - **Chạy trên Web (khuyến nghị khi demo):**
+   - **Chạy trên nền tảng Web:**
      ```bash
      flutter run -d web-server --web-port 8080 --web-hostname 127.0.0.1
      ```
@@ -228,18 +234,18 @@ flowchart TD
      ```bash
      flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
      ```
-   - **Chạy trên thiết bị thật (cùng mạng Wi-Fi):**
+   - **Chạy trên thiết bị thật (cùng mạng LAN/Wi-Fi):**
      ```bash
      flutter run --dart-define=API_BASE_URL=http://<IP_MAY_TINH>:8000
      ```
 
 ---
 
-## 5. Kịch bản vận hành chuẩn y tế (Timeline Demo)
+## 5. Kịch bản vận hành chuẩn y tế
 
 ```
 [TRẠNG THÁI CHỜ]: 
-Hộp đóng nắp, trọng lượng 5.0g (10 gói chia sẵn x 0.5g), Đèn LED tắt, Còi im lặng.
+Hộp đóng nắp, tải trọng 5.0g (10 gói chia sẵn x 0.5g), Đèn LED tắt, Còi im lặng.
    │
    ▼
 [ĐẾN GIỜ UỐNG THUỐC]:
@@ -292,7 +298,7 @@ Hộp đóng nắp, trọng lượng 5.0g (10 gói chia sẵn x 0.5g), Đèn LED
 
 ---
 
-## 7. Bằng chứng kiểm thử & Quality Gates (100% Pass)
+## 7. Bằng chứng kiểm thử & Quality Gates
 
 Toàn bộ hệ thống được kiểm thử tự động, nghiêm ngặt qua 4 lớp kiểm tra chất lượng:
 
@@ -308,7 +314,8 @@ Toàn bộ hệ thống được kiểm thử tự động, nghiêm ngặt qua 4
 ========================================================================================
 ```
 
-### Lệnh chạy kiểm thử nhanh:
+### Lệnh chạy kiểm thử nhanh
+
 ```powershell
 # Kiểm thử Backend:
 cd backend
