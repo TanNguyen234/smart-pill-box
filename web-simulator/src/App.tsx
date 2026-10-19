@@ -197,17 +197,17 @@ function eventLabel(event: SimulationEvent) {
   if (event.event_type === 'SIMULATION_RESET') return 'Đặt lại hộp mô phỏng'
   if (event.event_type === 'PILL_REFILLED' || event.event_type === 'REFILL') {
     const pills = event.payload.count ?? event.payload.pills_added ?? 10
-    return `Nạp thêm thuốc (+${pills} viên)`
+    return `Nạp thêm gói thuốc (+${pills} gói)`
   }
   if (event.event_type === 'WEIGHT_READING') {
     const weight = event.payload.weight_g
-    return typeof weight === 'number' ? `Cảm biến cân: ${weight.toFixed(1)} g` : 'Cảm biến tải trọng đọc khối lượng'
+    return typeof weight === 'number' ? `Cảm biến tải trọng: ${weight.toFixed(1)} g` : 'Cảm biến tải trọng đọc khối lượng'
   }
   if (event.event_type === 'CONFIRM_PRESSED') return 'Nút hộp: Bấm xác nhận uống thuốc'
   return {
     LID_OPENED: 'Mở nắp ngăn',
     LID_CLOSED: 'Đóng nắp ngăn',
-    PILL_DISPENSED: 'Lấy một viên mô phỏng',
+    PILL_DISPENSED: 'Lấy 1 gói thuốc mô phỏng',
     DOSE_CONFIRMED: 'Người dùng xác nhận đã uống',
   }[event.event_type] ?? event.event_type
 }
@@ -452,7 +452,7 @@ function App() {
   }
 
   async function resetSimulation() {
-    if (!token || device?.clock_mode === 'REALTIME' || !window.confirm('Đặt lại hộp sẽ xóa lịch sử thao tác, lần nhắc và cảnh báo của phiên demo hiện tại. Các tài khoản và lịch thuốc vẫn được giữ; nhật ký sẽ ghi thao tác đặt lại. Tiếp tục?')) return
+    if (!token || device?.clock_mode === 'REALTIME' || !window.confirm('Đặt lại hộp sẽ xóa lịch sử thao tác, lần nhắc và cảnh báo của phiên mô phỏng hiện tại. Các tài khoản và lịch thuốc vẫn được giữ; nhật ký sẽ ghi thao tác đặt lại. Tiếp tục?')) return
     setBusyControl(true)
     setActionMessage('')
     try {
@@ -471,6 +471,18 @@ function App() {
     }
   }
 
+  async function clearHistoryEvents() {
+    if (!token || !window.confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử thao tác và sự kiện trên hệ thống không?')) return
+    try {
+      await request('/api/events', token, { method: 'DELETE' })
+      const updated = await request<DeviceState>('/api/simulation/state', token)
+      setDevice(updated)
+      setActionMessage('Đã làm sạch toàn bộ lịch sử thao tác và sự kiện.')
+    } catch (e) {
+      setActionMessage(e instanceof Error ? e.message : 'Không thể xóa lịch sử sự kiện')
+    }
+  }
+
   if (!token) {
     return (
       <main className="login-screen">
@@ -481,17 +493,17 @@ function App() {
             <IconPillBox size={64} />
             <span>SIM—001</span>
           </div>
-          <div className="art-caption">THREE SLOTS<br />ONE SHARED API</div>
+          <div className="art-caption">BA NGĂN THUỐC<br />KẾT NỐI ĐỒNG BỘ</div>
         </div>
         <section className="login-panel">
           <div className="brand-lockup">
             <span className="brand-icon"><IconPillBox size={22} /></span>
-            <span>SMART PILL BOX<small>SIMULATOR / 01</small></span>
+            <span>SMART PILL BOX<small>BẢN MÔ PHỎNG / 01</small></span>
           </div>
           <div className="login-copy">
             <p className="eyebrow">BÀN ĐIỀU KHIỂN THIẾT BỊ</p>
             <h1>Một chiếc hộp.<br /><em>Ba ngăn thuốc.</em></h1>
-            <p className="muted">Đăng nhập operator để thao tác hộp mô phỏng, chạy đồng hồ và xem dữ liệu đã lưu trên máy chủ.</p>
+            <p className="muted">Đăng nhập tài khoản điều khiển để thao tác hộp mô phỏng, chạy đồng hồ và xem dữ liệu đã lưu trên máy chủ.</p>
           </div>
           <form className="login-form" onSubmit={login}>
             <label htmlFor="email">Email điều khiển</label>
@@ -507,13 +519,13 @@ function App() {
               type="button"
               className="demo-account-hint"
               onClick={() => { setEmail('operator@example.test'); setPassword('Password123!'); void unlockAudio(); }}
-              title="Bấm để điền tài khoản Operator mặc định"
+              title="Bấm để điền tài khoản người vận hành mặc định"
             >
               <IconKey size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: '6px' }} />
               <span>Điền nhanh: operator@example.test • Password123!</span>
             </button>
           </form>
-          <p className="login-footnote">Dữ liệu demo · Không dùng hồ sơ bệnh nhân thật</p>
+          <p className="login-footnote">Dữ liệu thử nghiệm · Không dùng hồ sơ bệnh nhân thật</p>
         </section>
       </main>
     )
@@ -528,10 +540,10 @@ function App() {
       <header className="topbar">
         <a className="brand-lockup" href="#top" aria-label="Smart Pill Box">
           <span className="brand-icon"><PillBoxMark /></span>
-          <span>SMART PILL BOX<small>SIMULATOR / 01</small></span>
+          <span>SMART PILL BOX<small>BẢN MÔ PHỎNG / 01</small></span>
         </a>
         <div className="topbar-right">
-          <div className={`connection ${connectionError ? 'is-offline' : ''}`}><span className="status-dot" />{connectionError ? 'Mất kết nối' : 'Backend trực tuyến'}</div>
+          <div className={`connection ${connectionError ? 'is-offline' : ''}`}><span className="status-dot" />{connectionError ? 'Mất kết nối' : 'Máy chủ trực tuyến'}</div>
           <button
             className={`audio-toggle ${audioEnabled ? 'audio-on' : ''}`}
             type="button"
@@ -551,7 +563,7 @@ function App() {
             <IconBellRing size={15} />
             <span>Thử còi</span>
           </button>
-          <span className="user-chip">{user?.display_name ?? 'Operator'}</span>
+          <span className="user-chip">{user?.display_name ?? 'Người vận hành'}</span>
           <button className="text-button" type="button" onClick={logout}>Đăng xuất</button>
         </div>
       </header>
@@ -573,7 +585,7 @@ function App() {
         {connectionError && (
           <div className="alert-banner" role="status">
             <IconAlertCircle size={20} />
-            <div><strong>Không thể đồng bộ với backend</strong><small>{connectionError} · Đang thử kết nối lại mỗi 2 giây.</small></div>
+            <div><strong>Không thể đồng bộ với máy chủ</strong><small>{connectionError} · Đang thử kết nối lại mỗi 2 giây.</small></div>
           </div>
         )}
         {actionMessage && (
@@ -585,7 +597,7 @@ function App() {
             </button>
           </div>
         )}
-        {loading && !device && <div className="loading-card"><span className="loader" />Đang tải trạng thái từ SQLite…</div>}
+        {loading && !device && <div className="loading-card"><span className="loader" />Đang tải trạng thái từ cơ sở dữ liệu…</div>}
 
         <section className="simulation-console" aria-label="Điều khiển đồng hồ mô phỏng">
           <div className="console-copy">
@@ -595,7 +607,7 @@ function App() {
             <div>
               <p className="eyebrow">CHẾ ĐỘ NHẮC THUỐC</p>
               <strong>{device?.clock_mode === 'REALTIME' ? 'Tự động theo giờ thật (Mặc định)' : 'Đồng hồ mô phỏng'}</strong>
-              <small>{device?.clock_mode === 'REALTIME' ? 'Backend tự kiểm tra giờ uống liên tục theo thời gian thực, kể cả khi đóng website. Giữ FastAPI đang chạy.' : 'Tiến phút chủ động để trình diễn nhắc giờ và cảnh báo.'}</small>
+              <small>{device?.clock_mode === 'REALTIME' ? 'Máy chủ tự kiểm tra giờ uống liên tục theo thời gian thực, kể cả khi đóng website. Giữ dịch vụ máy chủ đang chạy.' : 'Tiến phút chủ động để trình diễn nhắc giờ và cảnh báo.'}</small>
             </div>
           </div>
           <div className="clock-mode-toggle" role="group" aria-label="Chế độ thời gian">
@@ -657,10 +669,10 @@ function App() {
                       <div className={`led-lens ${item.led === 'Bật' ? 'led-active' : ''}`} title={`Đèn LED: ${item.led}`}>
                         <div className="led-glow-ring" />
                       </div>
-                      <span className="led-text">{item.led === 'Bật' ? 'LED BẬT' : 'LED TẮT'}</span>
+                      <span className="led-text">{item.led === 'Bật' ? 'ĐÈN BẬT' : 'ĐÈN TẮT'}</span>
                     </div>
 
-                    <div className="pill-well" aria-label={`${item.pill_count} viên thuốc trong ngăn`}>
+                    <div className="pill-well" aria-label={`${item.pill_count} gói thuốc trong ngăn`}>
                       <div className="pills-scatter">
                         {Array.from({ length: Math.min(item.pill_count, 8) }, (_, pill) => (
                           <div className={`pill-unit pill-type-${item.slot}`} key={pill}>
@@ -671,7 +683,7 @@ function App() {
                       </div>
                       <div className="pill-counter-tag">
                         <strong>{item.pill_count}</strong>
-                        <span>viên mẫu</span>
+                        <span>gói chia sẵn</span>
                       </div>
                     </div>
                   </div>
@@ -686,7 +698,7 @@ function App() {
                   <div className="metric-box scale-metric">
                     <span className="metric-label">CẢM BIẾN TẢI TRỌNG</span>
                     <div className="oled-scale-readout">
-                      <span className="oled-tag">LOADCELL</span>
+                      <span className="oled-tag">CẢM BIẾN TẢI TRỌNG</span>
                       <strong className="oled-value">{item.weight_grams.toFixed(1)} <small>g</small></strong>
                     </div>
                   </div>
@@ -729,10 +741,10 @@ function App() {
                     type="button"
                     disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl}
                     onClick={() => void takeOnePill(item)}
-                    title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết thuốc mẫu' : undefined}
+                    title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết gói thuốc chia sẵn' : undefined}
                   >
                     <span className="btn-icon"><IconPill size={16} /></span>
-                    <span>Lấy một viên</span>
+                    <span>Lấy 1 gói thuốc</span>
                     <span className="btn-weight-change">−0,5 g</span>
                   </button>
                   <button
@@ -740,10 +752,10 @@ function App() {
                     type="button"
                     disabled={!item.lid_open || busySlot === item.slot || busyControl}
                     onClick={() => void refillPills(item)}
-                    title={!item.lid_open ? 'Mở nắp ngăn trước khi nạp thêm thuốc' : 'Nạp thêm 10 viên thuốc (+5.0 g)'}
+                    title={!item.lid_open ? 'Mở nắp ngăn trước khi nạp thêm gói thuốc' : 'Nạp thêm 10 gói thuốc chia sẵn (+5.0 g)'}
                   >
                     <span className="btn-icon"><IconRefresh size={15} /></span>
-                    <span>Nạp thêm 10 viên</span>
+                    <span>Nạp thêm 10 gói</span>
                     <span className="btn-weight-change">+5,0 g</span>
                   </button>
                   <button
@@ -751,7 +763,7 @@ function App() {
                     type="button"
                     disabled={!item.lid_open || busySlot === item.slot || busyControl}
                     onClick={() => void injectNoise(item)}
-                    title="Thử nhiễu tải trọng 0.1g (kiểm thử T033, không làm giảm viên)"
+                    title="Thử nhiễu tải trọng 0.1g (kiểm thử rung động, không làm giảm gói thuốc)"
                   >
                     <span className="btn-icon"><IconVibrate size={15} /></span>
                     <span>Thử nhiễu cân</span>
@@ -774,14 +786,14 @@ function App() {
               </article>
             ))}
 
-            {!device && !loading && <div className="empty-state">Chưa có trạng thái hộp. Kiểm tra backend và đăng nhập operator.</div>}
+            {!device && !loading && <div className="empty-state">Chưa có trạng thái hộp. Kiểm tra máy chủ và đăng nhập tài khoản điều khiển.</div>}
           </div>
         </section>
 
         <section className="lower-grid">
           <div className="schedule-panel">
             <div className="section-heading compact">
-              <div><p className="eyebrow">ĐỒNG BỘ TỪ DATABASE</p><h2>Lịch đang bật</h2></div>
+              <div><p className="eyebrow">ĐỒNG BỘ TỪ CƠ SỞ DỮ LIỆU</p><h2>Lịch đang bật</h2></div>
               <span className="count-pill">{device?.active_schedules.length ?? 0}</span>
             </div>
             {nextSchedule && (
@@ -800,7 +812,7 @@ function App() {
                 <div className="schedule-row" key={schedule.id}>
                   <div className="schedule-row-main">
                     <time>{schedule.time}</time>
-                    <span className="schedule-slot">N{schedule.slot}</span>
+                    <span className="schedule-slot">Ngăn {schedule.slot}</span>
                     <strong>{schedule.medication_name}</strong>
                   </div>
                   <div className="schedule-row-meta">
@@ -817,7 +829,19 @@ function App() {
           <aside className="activity-panel">
             <div className="section-heading compact">
               <div><p className="eyebrow">NHẬT KÝ THIẾT BỊ</p><h2>Thao tác gần đây</h2></div>
-              <span className="count-pill">{events.length}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ fontSize: '11px', color: '#dc2626', padding: '2px 8px' }}
+                  onClick={() => void clearHistoryEvents()}
+                  disabled={events.length === 0}
+                  title="Xóa sạch nhật ký sự kiện trên máy chủ"
+                >
+                  Xóa nhật ký
+                </button>
+                <span className="count-pill">{events.length}</span>
+              </div>
             </div>
             <div className="activity-list">
               {events.map((event) => (
@@ -834,10 +858,10 @@ function App() {
                   </div>
                 </div>
               ))}
-              {device && events.length === 0 && <p className="empty-activity">Chưa có thao tác trong phiên demo. Mở nắp hoặc tiến đồng hồ để bắt đầu.</p>}
+              {device && events.length === 0 && <p className="empty-activity">Chưa có thao tác trong phiên mô phỏng. Mở nắp hoặc tiến đồng hồ để bắt đầu.</p>}
               {!device && <p className="empty-activity">Nhật ký sẽ xuất hiện sau khi tải trạng thái thiết bị.</p>}
             </div>
-            <p className="sync-note"><span className="sync-arrows"><IconRefresh size={13} /></span> Lịch sử sự kiện được lưu trên backend</p>
+            <p className="sync-note"><span className="sync-arrows"><IconRefresh size={13} /></span> Lịch sử sự kiện được lưu trên máy chủ</p>
           </aside>
         </section>
 
