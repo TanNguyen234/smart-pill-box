@@ -540,7 +540,7 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
     def events(
         patient_id: int | None = None,
         slot: int | None = None,
-        date: str | None = None,
+        date: calendar_date | None = None,
         user: User = Depends(caregiver_only),
         db: Session = Depends(get_db),
     ):
