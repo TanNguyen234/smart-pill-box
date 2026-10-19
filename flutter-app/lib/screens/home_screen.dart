@@ -15,6 +15,7 @@ class HomeScreen extends StatefulWidget {
     required this.onLogout,
     required this.onCreateSchedule,
     required this.onUpdateSchedule,
+    this.onDeleteSchedule,
     required this.api,
     this.onRefreshData,
   });
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback onLogout;
   final Future<void> Function(Map<String, dynamic> values) onCreateSchedule;
   final Future<void> Function(int scheduleId, Map<String, dynamic> values) onUpdateSchedule;
+  final Future<void> Function(int scheduleId)? onDeleteSchedule;
   final SmartPillApi api;
   final Future<void> Function()? onRefreshData;
 
@@ -143,6 +145,51 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã cập nhật lịch uống thuốc thành công')),
       );
+    }
+  }
+
+  Future<void> _confirmDeleteSchedule(MedicationSchedule schedule) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xác nhận xóa lịch uống'),
+        content: Text(
+          'Bạn có chắc chắn muốn xóa lịch uống "${schedule.medicationName}" lúc ${schedule.time} ở Ngăn ${schedule.slot}?\n\nThao tác này sẽ hủy các lần nhắc thuốc chưa uống liên kết với lịch này.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Xóa lịch'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        if (widget.onDeleteSchedule != null) {
+          await widget.onDeleteSchedule!(schedule.id);
+        } else {
+          await widget.api.deleteSchedule(schedule.id);
+        }
+        await _handleRefreshAll();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đã xóa lịch uống thuốc thành công')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Không thể xóa lịch: $e')),
+          );
+        }
+      }
     }
   }
 
@@ -534,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF64748B)),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'Ngăn ${schedule.slot} · Giờ uống: ${schedule.time}',
+                                  'Ngăn ${schedule.slot} · Giờ uống: ${schedule.time} · ${schedule.recurrenceLabel}',
                                   style: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500),
                                 ),
                               ],
@@ -653,6 +700,23 @@ class _HomeScreenState extends State<HomeScreen> {
                               '${patient?.name ?? 'Hồ sơ'} · Ngăn ${schedule.slot} · ${schedule.time}',
                               style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                             ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0F9FF),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFBAE6FD)),
+                              ),
+                              child: Text(
+                                schedule.recurrenceLabel,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF0284C7),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -665,6 +729,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         icon: const Icon(Icons.edit_outlined, color: Color(0xFF64748B)),
                         tooltip: 'Chỉnh sửa lịch',
                         onPressed: () => _showEditSchedule(schedule),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444)),
+                        tooltip: 'Xóa lịch uống',
+                        onPressed: () => _confirmDeleteSchedule(schedule),
                       ),
                     ],
                   ),
@@ -797,6 +866,7 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
   late int _slot;
   late TimeOfDay _time;
   late bool _active;
+  late Set<int> _selectedDays;
   bool _busy = false;
   String? _error;
 
@@ -810,6 +880,7 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
     final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
     _time = TimeOfDay(hour: h, minute: m);
     _active = widget.schedule.active;
+    _selectedDays = widget.schedule.parsedDays.toSet();
   }
 
   @override
@@ -872,6 +943,11 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
                 ),
               ),
               const SizedBox(height: 14),
+              _DaySelector(
+                selectedDays: _selectedDays,
+                onChanged: (days) => setState(() => _selectedDays = days),
+              ),
+              const SizedBox(height: 14),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Kích hoạt lịch này'),
@@ -902,12 +978,14 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
                   });
                   final formattedTime =
                       '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}';
+                  final daysStr = (_selectedDays.toList()..sort()).join(',');
                   try {
                     await widget.onSubmit({
                       'medication_name': _nameController.text.trim(),
                       'slot': _slot,
                       'time': formattedTime,
                       'active': _active,
+                      'days_of_week': daysStr,
                     });
                     if (context.mounted) Navigator.of(context).pop(true);
                   } catch (e) {
@@ -950,6 +1028,7 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
   late int _patientId;
   int _slot = 1;
   TimeOfDay _time = const TimeOfDay(hour: 8, minute: 0);
+  Set<int> _selectedDays = {1, 2, 3, 4, 5, 6, 7};
   bool _busy = false;
   String? _error;
 
@@ -1045,6 +1124,11 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                   'Giờ uống: ${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')} (Bấm để đổi)',
                 ),
               ),
+              const SizedBox(height: 14),
+              _DaySelector(
+                selectedDays: _selectedDays,
+                onChanged: (days) => setState(() => _selectedDays = days),
+              ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13)),
@@ -1069,12 +1153,14 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                   });
                   final formattedTime =
                       '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}';
+                  final daysStr = (_selectedDays.toList()..sort()).join(',');
                   try {
                     await widget.onSubmit({
                       'patient_id': _patientId,
                       'medication_name': _nameController.text.trim(),
                       'slot': _slot,
                       'time': formattedTime,
+                      'days_of_week': daysStr,
                     });
                     if (context.mounted) Navigator.of(context).pop(true);
                   } catch (e) {
@@ -1089,6 +1175,120 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
           child: _busy
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
               : const Text('Lưu lịch'),
+        ),
+      ],
+    );
+  }
+}
+
+// ==================== BỘ CHỌN THỨ TRONG TUẦN ====================
+class _DaySelector extends StatelessWidget {
+  const _DaySelector({
+    required this.selectedDays,
+    required this.onChanged,
+  });
+
+  final Set<int> selectedDays;
+  final ValueChanged<Set<int>> onChanged;
+
+  static const _days = [
+    (1, 'T2'),
+    (2, 'T3'),
+    (3, 'T4'),
+    (4, 'T5'),
+    (5, 'T6'),
+    (6, 'T7'),
+    (7, 'CN'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Lịch uống các ngày:',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            Wrap(
+              spacing: 2,
+              children: [
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => onChanged({1, 2, 3, 4, 5, 6, 7}),
+                  child: const Text('Mỗi ngày', style: TextStyle(fontSize: 11)),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => onChanged({1, 3, 5}),
+                  child: const Text('2-4-6', style: TextStyle(fontSize: 11)),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => onChanged({2, 4, 6}),
+                  child: const Text('3-5-7', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: _days.map((item) {
+            final day = item.$1;
+            final label = item.$2;
+            final isSelected = selectedDays.contains(day);
+            return InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                final next = Set<int>.from(selectedDays);
+                if (isSelected) {
+                  if (next.length > 1) {
+                    next.remove(day);
+                  }
+                } else {
+                  next.add(day);
+                }
+                onChanged(next);
+              },
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected ? const Color(0xFF0D9488) : const Color(0xFFF1F5F9),
+                  border: Border.all(
+                    color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? Colors.white : const Color(0xFF475569),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
         ),
       ],
     );

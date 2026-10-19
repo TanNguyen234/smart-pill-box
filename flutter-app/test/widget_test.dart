@@ -135,4 +135,68 @@ void main() {
     expect(find.text('caregiver-a@example.test'), findsOneWidget);
     expect(find.text('Đăng xuất'), findsOneWidget);
   });
+
+  testWidgets('displays recurrence label and deletes a schedule with confirmation', (tester) async {
+    final account = Account(id: 1, email: 'caregiver-a@example.test', displayName: 'Người thân A', role: 'caregiver');
+    final patient = const Patient(id: 1, name: 'Nguyễn Văn An');
+    final schedule = MedicationSchedule(
+      id: 42,
+      patientId: 1,
+      medicationName: 'Metformin 500mg',
+      slot: 2,
+      time: '12:00',
+      active: true,
+      daysOfWeek: '1,3,5',
+    );
+
+    int? deletedScheduleId;
+    final api = SmartPillApi(client: MockClient((_) async => http.Response('[]', 200, headers: {'content-type': 'application/json'})));
+    api.token = 'test-jwt-token';
+
+    await tester.pumpWidget(MaterialApp(
+      home: HomeScreen(
+        account: account,
+        patients: [patient],
+        schedules: [schedule],
+        api: api,
+        onCreateSchedule: (vals) async {},
+        onUpdateSchedule: (id, vals) async {},
+        onDeleteSchedule: (id) async {
+          deletedScheduleId = id;
+        },
+        onRefreshData: () async {},
+        onLogout: () {},
+      ),
+    ));
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Verify recurrence label on Tab 0
+    expect(find.textContaining('Thứ 2, 4, 6'), findsOneWidget);
+
+    // Switch to Tab 1 (Lịch)
+    await tester.tap(find.text('Lịch'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Metformin 500mg'), findsOneWidget);
+    expect(find.text('Thứ 2, 4, 6'), findsOneWidget);
+
+    // Tap delete button
+    final deleteButton = find.byTooltip('Xóa lịch uống');
+    expect(deleteButton, findsOneWidget);
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+
+    // Verify confirmation dialog
+    expect(find.text('Xác nhận xóa lịch uống'), findsOneWidget);
+    expect(find.textContaining('Bạn có chắc chắn muốn xóa lịch uống "Metformin 500mg"'), findsOneWidget);
+
+    // Confirm deletion
+    await tester.tap(find.widgetWithText(FilledButton, 'Xóa lịch'));
+    await tester.pumpAndSettle();
+
+    expect(deletedScheduleId, 42);
+  });
 }

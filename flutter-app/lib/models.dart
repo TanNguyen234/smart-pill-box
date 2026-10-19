@@ -39,6 +39,7 @@ class MedicationSchedule {
     required this.slot,
     required this.time,
     required this.active,
+    this.daysOfWeek,
   });
 
   final int id;
@@ -47,6 +48,48 @@ class MedicationSchedule {
   final int slot;
   final String time;
   final bool active;
+  final String? daysOfWeek;
+
+  List<int> get parsedDays {
+    if (daysOfWeek == null || daysOfWeek!.trim().isEmpty) {
+      return const [1, 2, 3, 4, 5, 6, 7];
+    }
+    return daysOfWeek!
+        .split(',')
+        .map((s) => int.tryParse(s.trim()))
+        .whereType<int>()
+        .toList();
+  }
+
+  String get recurrenceLabel {
+    final days = parsedDays;
+    if (days.length == 7) return 'Mỗi ngày';
+    if (days.length == 5 &&
+        days.contains(1) &&
+        days.contains(2) &&
+        days.contains(3) &&
+        days.contains(4) &&
+        days.contains(5)) {
+      return 'Thứ 2 - Thứ 6';
+    }
+    if (days.length == 3 &&
+        days.contains(1) &&
+        days.contains(3) &&
+        days.contains(5)) {
+      return 'Thứ 2, 4, 6';
+    }
+    if (days.length == 3 &&
+        days.contains(2) &&
+        days.contains(4) &&
+        days.contains(6)) {
+      return 'Thứ 3, 5, 7';
+    }
+    if (days.length == 2 && days.contains(6) && days.contains(7)) {
+      return 'Cuối tuần (T7, CN)';
+    }
+    const map = {1: 'T2', 2: 'T3', 3: 'T4', 4: 'T5', 5: 'T6', 6: 'T7', 7: 'CN'};
+    return days.map((d) => map[d] ?? '$d').join(', ');
+  }
 
   factory MedicationSchedule.fromJson(Map<String, dynamic> json) => MedicationSchedule(
         id: json['id'] as int,
@@ -55,6 +98,7 @@ class MedicationSchedule {
         slot: json['slot'] as int,
         time: json['time'] as String,
         active: json['active'] as bool,
+        daysOfWeek: json['days_of_week'] as String?,
       );
 
   MedicationSchedule copyWith({
@@ -64,6 +108,7 @@ class MedicationSchedule {
     int? slot,
     String? time,
     bool? active,
+    String? daysOfWeek,
   }) =>
       MedicationSchedule(
         id: id ?? this.id,
@@ -72,6 +117,7 @@ class MedicationSchedule {
         slot: slot ?? this.slot,
         time: time ?? this.time,
         active: active ?? this.active,
+        daysOfWeek: daysOfWeek ?? this.daysOfWeek,
       );
 }
 

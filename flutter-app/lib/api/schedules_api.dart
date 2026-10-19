@@ -18,6 +18,7 @@ extension SchedulesApi on SmartPillApi {
     required String medicationName,
     required int slot,
     required String time,
+    String? daysOfWeek,
   }) async {
     await _request('/api/schedules', method: 'POST', body: {
       'patient_id': patientId,
@@ -25,6 +26,7 @@ extension SchedulesApi on SmartPillApi {
       'slot': slot,
       'time': time,
       'active': true,
+      'days_of_week': ?daysOfWeek,
     });
   }
 
@@ -34,12 +36,14 @@ extension SchedulesApi on SmartPillApi {
     int? slot,
     String? time,
     bool? active,
+    String? daysOfWeek,
   }) async {
     final body = <String, dynamic>{};
     if (medicationName != null) body['medication_name'] = medicationName;
     if (slot != null) body['slot'] = slot;
     if (time != null) body['time'] = time;
     if (active != null) body['active'] = active;
+    if (daysOfWeek != null) body['days_of_week'] = daysOfWeek;
 
     final data = await _request(
       '/api/schedules/$scheduleId',
@@ -47,5 +51,9 @@ extension SchedulesApi on SmartPillApi {
       body: body,
     ) as Map<String, dynamic>;
     return MedicationSchedule.fromJson(data);
+  }
+
+  Future<void> deleteSchedule(int scheduleId) async {
+    await _request('/api/schedules/$scheduleId', method: 'DELETE');
   }
 }

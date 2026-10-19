@@ -130,6 +130,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return 'Tiến đồng hồ mô phỏng';
       case 'SIMULATION_RESET':
         return 'Đặt lại trạng thái demo';
+      case 'PILL_REFILLED':
+      case 'REFILL':
+        return 'Nạp thêm thuốc vào ngăn';
       default:
         return eventType;
     }
@@ -149,6 +152,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case 'PILL_REMOVED':
       case 'PILL_DISPENSED':
         return Icons.medication_outlined;
+      case 'PILL_REFILLED':
+      case 'REFILL':
+        return Icons.add_circle_outline;
       default:
         return Icons.history;
     }
@@ -180,6 +186,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case 'PILL_REMOVED':
       case 'PILL_DISPENSED':
         return const Color(0xFF7C3AED);
+      case 'PILL_REFILLED':
+      case 'REFILL':
+        return const Color(0xFF10B981);
       case 'WEIGHT_READING':
       case 'WEIGHT_SAMPLE':
       case 'WEIGHT_CHANGED':
@@ -450,6 +459,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   payload['new_weight'];
                               final delta = payload['delta_grams'];
                               final minutes = payload['minutes'];
+                              final pillsAdded = payload['count'] ?? payload['pills_added'];
 
                               return IntrinsicHeight(
                                 child: Row(
@@ -610,11 +620,60 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                               // Extra metrics if available
                                               if (weight != null ||
                                                   delta != null ||
-                                                  minutes != null) ...[
+                                                  minutes != null ||
+                                                  pillsAdded != null) ...[
                                                 const SizedBox(height: 8),
                                                 Wrap(
                                                   spacing: 6,
                                                   children: [
+                                                    if (pillsAdded != null)
+                                                      Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: const Color(
+                                                              0xFFECFDF5),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(4),
+                                                          border: Border.all(
+                                                            color: const Color(
+                                                                0xFFA7F3D0),
+                                                          ),
+                                                        ),
+                                                        child: Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            const Icon(
+                                                              Icons
+                                                                  .add_circle_outline,
+                                                              size: 12,
+                                                              color: Color(
+                                                                  0xFF059669),
+                                                            ),
+                                                            const SizedBox(
+                                                                width: 4),
+                                                            Text(
+                                                              '+$pillsAdded viên',
+                                                              style:
+                                                                  const TextStyle(
+                                                                fontSize: 11,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Color(
+                                                                    0xFF065F46),
+                                                             ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
                                                     if (weight != null)
                                                       Container(
                                                         padding:

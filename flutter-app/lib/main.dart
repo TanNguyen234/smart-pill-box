@@ -115,6 +115,7 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                     medicationName: values['medication_name'] as String,
                     slot: values['slot'] as int,
                     time: values['time'] as String,
+                    daysOfWeek: values['days_of_week'] as String?,
                   );
                   try { await _refreshSchedules(); } catch (_) { /* Update persisted; retry on refresh. */ }
                 },
@@ -125,7 +126,12 @@ class _SmartPillBoxAppState extends State<SmartPillBoxApp> {
                     slot: values['slot'] as int?,
                     time: values['time'] as String?,
                     active: values['active'] as bool?,
+                    daysOfWeek: values['days_of_week'] as String?,
                   );
+                  try { await _refreshSchedules(); } catch (_) { /* Update persisted; retry on refresh. */ }
+                },
+                onDeleteSchedule: (scheduleId) async {
+                  await _api.deleteSchedule(scheduleId);
                   try { await _refreshSchedules(); } catch (_) { /* Update persisted; retry on refresh. */ }
                 },
                 onRefreshData: _refreshSchedules,
