@@ -46,7 +46,7 @@ type Compartment = {
   current_occurrence_id: number | null
   can_confirm: boolean
 }
-type Schedule = { id: number; medication_name: string; slot: number; time: string }
+type Schedule = { id: number; medication_name: string; slot: number; time: string; days_of_week?: string | null }
 type SimulationEvent = {
   id: number
   event_uuid: string
@@ -81,6 +81,8 @@ type EventType =
   | 'CONFIRM_PRESSED'
   | 'PILL_DISPENSED'
   | 'DOSE_CONFIRMED'
+  | 'PILL_REFILLED'
+  | 'REFILL'
 
 class ApiRequestError extends Error {
   status: number
@@ -146,6 +148,22 @@ function PillBoxMark() {
   return <IconPillBox size={30} />
 }
 
+function formatDaysOfWeek(daysStr?: string | null): string {
+  if (!daysStr || daysStr.trim() === '') return 'Mỗi ngày'
+  const days = daysStr.split(',').map((d) => d.trim()).filter(Boolean)
+  if (days.length === 7) return 'Mỗi ngày'
+  const dayMap: Record<string, string> = {
+    '1': 'T2',
+    '2': 'T3',
+    '3': 'T4',
+    '4': 'T5',
+    '5': 'T6',
+    '6': 'T7',
+    '7': 'CN',
+  }
+  return days.map((d) => dayMap[d] ?? d).join(', ')
+}
+
 function EventIcon({ type }: { type: string }) {
   switch (type) {
     case 'LID_OPENED':
@@ -164,6 +182,9 @@ function EventIcon({ type }: { type: string }) {
       return <IconRotateCcw size={16} />
     case 'REMINDER_SENT':
       return <IconBellRing size={16} />
+    case 'PILL_REFILLED':
+    case 'REFILL':
+      return <IconRefresh size={16} />
     default:
       return <IconActivity size={16} />
   }
@@ -174,6 +195,10 @@ function eventLabel(event: SimulationEvent) {
   if (event.event_type === 'ALERT_CREATED') return 'Đã tạo cảnh báo quá hạn'
   if (event.event_type === 'CLOCK_ADVANCED') return `Tiến đồng hồ +${event.payload.minutes} phút`
   if (event.event_type === 'SIMULATION_RESET') return 'Đặt lại hộp mô phỏng'
+  if (event.event_type === 'PILL_REFILLED' || event.event_type === 'REFILL') {
+    const pills = event.payload.count ?? event.payload.pills_added ?? 10
+    return `Nạp thêm thuốc (+${pills} viên)`
+  }
   if (event.event_type === 'WEIGHT_READING') {
     const weight = event.payload.weight_g
     return typeof weight === 'number' ? `Cảm biến cân: ${weight.toFixed(1)} g` : 'Cảm biến tải trọng đọc khối lượng'
@@ -356,6 +381,11 @@ function App() {
   async function takeOnePill(item: Compartment) {
     const nextWeight = Math.max(0, Number((item.weight_grams - 0.5).toFixed(1)))
     await sendEvent(item.slot, 'WEIGHT_READING', { weight_g: nextWeight })
+    if (audioEnabled) playConfirmationChime()
+  }
+
+  async function refillPills(item: Compartment) {
+    await sendEvent(item.slot, 'PILL_REFILLED', { count: 10, pills_added: 10, weight_added_g: 5.0 })
     if (audioEnabled) playConfirmationChime()
   }
 
@@ -706,6 +736,17 @@ function App() {
                     <span className="btn-weight-change">−0,5 g</span>
                   </button>
                   <button
+                    className="refill-button"
+                    type="button"
+                    disabled={!item.lid_open || busySlot === item.slot || busyControl}
+                    onClick={() => void refillPills(item)}
+                    title={!item.lid_open ? 'Mở nắp ngăn trước khi nạp thêm thuốc' : 'Nạp thêm 10 viên thuốc (+5.0 g)'}
+                  >
+                    <span className="btn-icon"><IconRefresh size={15} /></span>
+                    <span>Nạp thêm 10 viên</span>
+                    <span className="btn-weight-change">+5,0 g</span>
+                  </button>
+                  <button
                     className="noise-button"
                     type="button"
                     disabled={!item.lid_open || busySlot === item.slot || busyControl}
@@ -757,10 +798,15 @@ function App() {
             <div className="schedule-list">
               {(device?.active_schedules ?? []).map((schedule) => (
                 <div className="schedule-row" key={schedule.id}>
-                  <time>{schedule.time}</time>
-                  <span className="schedule-slot">N{schedule.slot}</span>
-                  <strong>{schedule.medication_name}</strong>
-                  <span className="active-tag">ĐANG BẬT</span>
+                  <div className="schedule-row-main">
+                    <time>{schedule.time}</time>
+                    <span className="schedule-slot">N{schedule.slot}</span>
+                    <strong>{schedule.medication_name}</strong>
+                  </div>
+                  <div className="schedule-row-meta">
+                    <span className="recurrence-badge">{formatDaysOfWeek(schedule.days_of_week)}</span>
+                    <span className="active-tag">ĐANG BẬT</span>
+                  </div>
                 </div>
               ))}
               {device && device.active_schedules.length === 0 && <p className="empty-schedules">Chưa có lịch đang bật. Lịch mới từ ứng dụng Flutter sẽ xuất hiện tại đây.</p>}

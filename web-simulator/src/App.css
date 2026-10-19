@@ -757,6 +757,18 @@
   color: #0d9488;
   background: #f0fdfa;
 }
+.refill-button {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1.5px solid #86efac;
+}
+.refill-button:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+.refill-button .btn-weight-change {
+  color: #16a34a;
+}
 .noise-button {
   background: #f8fafc;
   color: #64748b;
@@ -871,6 +883,30 @@
   padding: 12px 4px;
   border-bottom: 1px solid #f1f5f9;
   font-size: 13px;
+  gap: 10px;
+}
+.schedule-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.schedule-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.recurrence-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0284c7;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
 }
 .schedule-row time {
   font: 700 13px var(--mono);
