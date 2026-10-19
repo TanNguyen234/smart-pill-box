@@ -28,6 +28,9 @@ ADDITIONS = {
         "clock_mode": "VARCHAR(20) NOT NULL DEFAULT 'SIMULATION'",
         "simulation_clock": "VARCHAR(40)",
     },
+    "medication_schedules": {
+        "days_of_week": "VARCHAR(50)",
+    },
 }
 
 

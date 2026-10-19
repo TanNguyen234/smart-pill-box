@@ -148,6 +148,7 @@ def schedule_json(schedule: MedicationSchedule) -> dict:
         "medication_name": schedule.medication_name,
         "slot": schedule.slot,
         "time": schedule.time,
+        "days_of_week": schedule.days_of_week,
         "active": schedule.active,
     }
 
@@ -256,7 +257,14 @@ def state_json(db: Session, state: SimulationState, idempotent: bool = False) ->
         "compartments": compartments,
         "next_milestone_minutes": next_milestone,
         "active_schedules": [
-            {"id": item.id, "medication_name": item.medication_name, "slot": item.slot, "compartment_id": item.slot, "time": item.time}
+            {
+                "id": item.id,
+                "medication_name": item.medication_name,
+                "slot": item.slot,
+                "compartment_id": item.slot,
+                "time": item.time,
+                "days_of_week": item.days_of_week,
+            }
             for item in active_schedules
         ],
         "active_occurrences": [item for item in recent_occurrences if item["status"] in ACTIVE_DOSE_STATUSES],
@@ -282,9 +290,14 @@ def process_clock_minute(db: Session, point: datetime, patient_id: int, clock_mo
             MedicationSchedule.active.is_(True), MedicationSchedule.patient_id == patient_id
         )
     ).all()
+    current_weekday = point.isoweekday()
     for schedule in schedules:
         if schedule.time != point.strftime("%H:%M"):
             continue
+        if schedule.days_of_week:
+            allowed_days = [int(d.strip()) for d in schedule.days_of_week.split(",") if d.strip().isdigit()]
+            if allowed_days and current_weekday not in allowed_days:
+                continue
         occurrence = db.scalar(
             select(DoseOccurrence).where(
                 DoseOccurrence.schedule_id == schedule.id,
@@ -386,6 +399,12 @@ async def app_lifespan(app: FastAPI):
             pass
 
 
+def days_overlap(d1: str | None, d2: str | None) -> bool:
+    set1 = set(d1.split(",")) if d1 else {str(i) for i in range(1, 8)}
+    set2 = set(d2.split(",")) if d2 else {str(i) for i in range(1, 8)}
+    return bool(set1 & set2)
+
+
 def create_app(database_url: str | None = None, jwt_secret: str | None = None) -> FastAPI:
     database_url = database_url or os.getenv("DATABASE_URL", "sqlite:///data/smartpill.sqlite3")
     jwt_secret = jwt_secret or os.getenv("JWT_SECRET")
@@ -450,22 +469,24 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         ).all()
         return [schedule_json(row) for row in rows]
 
+
     @app.post("/api/schedules", status_code=status.HTTP_201_CREATED)
     def create_schedule(payload: ScheduleCreate, user: User = Depends(caregiver_only), db: Session = Depends(get_db)):
         patient = db.get(Patient, payload.patient_id)
         if patient is None or patient.caregiver_id != user.id:
             raise HTTPException(status_code=403, detail="Hồ sơ không thuộc tài khoản này")
         if payload.active:
-            conflict = db.scalar(
-                select(MedicationSchedule.id).where(
+            conflicts = db.scalars(
+                select(MedicationSchedule).where(
                     MedicationSchedule.patient_id == payload.patient_id,
                     MedicationSchedule.slot == payload.slot,
                     MedicationSchedule.time == payload.time,
                     MedicationSchedule.active.is_(True),
                 )
-            )
-            if conflict is not None:
-                raise HTTPException(status_code=409, detail=f"Ngăn {payload.slot} đã có lịch uống lúc {payload.time}")
+            ).all()
+            for conf in conflicts:
+                if days_overlap(conf.days_of_week, payload.days_of_week):
+                    raise HTTPException(status_code=409, detail=f"Ngăn {payload.slot} đã có lịch uống lúc {payload.time}")
         row = MedicationSchedule(**payload.model_dump())
         db.add(row)
         db.commit()
@@ -484,23 +505,41 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         target_slot = changes.get("slot", row.slot)
         target_time = changes.get("time", row.time)
         target_active = changes.get("active", row.active)
+        target_days = changes.get("days_of_week", row.days_of_week)
         if target_active:
-            conflict = db.scalar(
-                select(MedicationSchedule.id).where(
+            conflicts = db.scalars(
+                select(MedicationSchedule).where(
                     MedicationSchedule.id != schedule_id,
                     MedicationSchedule.patient_id == target_patient_id,
                     MedicationSchedule.slot == target_slot,
                     MedicationSchedule.time == target_time,
                     MedicationSchedule.active.is_(True),
                 )
-            )
-            if conflict is not None:
-                raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã có lịch uống lúc {target_time}")
+            ).all()
+            for conf in conflicts:
+                if days_overlap(conf.days_of_week, target_days):
+                    raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã có lịch uống lúc {target_time}")
         for key, value in changes.items():
             setattr(row, key, value)
         db.commit()
         db.refresh(row)
         return schedule_json(row)
+
+    @app.delete("/api/schedules/{schedule_id}")
+    def delete_schedule(schedule_id: int, user: User = Depends(caregiver_only), db: Session = Depends(get_db)):
+        row = db.get(MedicationSchedule, schedule_id)
+        if row is None or db.scalar(select(Patient.id).where(Patient.id == row.patient_id, Patient.caregiver_id == user.id)) is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy lịch uống thuốc")
+        # Remove any pending/unconfirmed occurrences for this schedule so active reminders stop
+        db.execute(
+            delete(DoseOccurrence).where(
+                DoseOccurrence.schedule_id == schedule_id,
+                DoseOccurrence.status.in_(ACTIVE_DOSE_STATUSES),
+            )
+        )
+        db.delete(row)
+        db.commit()
+        return {"message": "Đã xóa lịch uống thuốc thành công", "deleted_id": schedule_id}
 
     @app.get("/api/doses", response_model=list[DoseOutput])
     def doses(
@@ -719,13 +758,19 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 if not compartment["lid_open"]:
                     raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi đọc tải trọng")
                 current_weight = float(compartment["weight_grams"])
-                drop = round(current_weight - new_weight, 2)
+                diff = round(current_weight - new_weight, 2)
                 extra_payload["weight_g"] = new_weight
-                if drop >= 0.3:
+                if diff >= 0.3:
                     if compartment["pill_count"] <= 0:
                         raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
                     compartment["pill_count"] -= 1
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
+                elif diff <= -0.4:
+                    # Tăng trọng lượng đáng kể: nạp thêm thuốc
+                    added_pills = max(1, round(abs(diff) / 0.5))
+                    compartment["pill_count"] += added_pills
+                    compartment["weight_grams"] = round(max(0.0, new_weight), 1)
+                    extra_payload["count"] = added_pills
                 else:
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
             elif payload.event_type in {"PILL_DISPENSED", "PILL_REMOVED"}:
@@ -735,6 +780,16 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                     raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
                 compartment["pill_count"] -= 1
                 compartment["weight_grams"] = round(max(0.0, compartment["weight_grams"] - 0.5), 1)
+            elif payload.event_type in {"PILL_REFILLED", "REFILL"}:
+                if not compartment["lid_open"]:
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi nạp thêm thuốc")
+                refill_count = payload.count or (payload.payload.get("count") if payload.payload else None) or 10
+                refill_count = max(1, int(refill_count))
+                added_weight = round(refill_count * 0.5, 1)
+                compartment["pill_count"] += refill_count
+                compartment["weight_grams"] = round(compartment["weight_grams"] + added_weight, 1)
+                extra_payload["count"] = refill_count
+                extra_payload["weight_added_g"] = added_weight
             elif payload.event_type in {"DOSE_CONFIRMED", "CONFIRM_PRESSED", "CONFIRMED"}:
                 now = local_wall_time(parse_virtual_clock(state.virtual_clock))
                 req_occ_id = requested_occurrence

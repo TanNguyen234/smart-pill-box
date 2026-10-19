@@ -33,3 +33,4 @@ flutter-app/android/.gradle/
 
 # Agent local artifacts
 .agents/
+reports/

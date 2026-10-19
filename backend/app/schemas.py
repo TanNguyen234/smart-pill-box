@@ -33,6 +33,7 @@ class ScheduleCreate(BaseModel):
     medication_name: str = Field(min_length=1, max_length=100)
     slot: int = Field(ge=1, le=3)
     time: str
+    days_of_week: str | list[int] | None = None
     active: bool = True
 
     @field_validator("medication_name")
@@ -50,11 +51,30 @@ class ScheduleCreate(BaseModel):
             raise ValueError("Giờ phải theo định dạng HH:mm")
         return value
 
+    @field_validator("days_of_week")
+    @classmethod
+    def clean_days_of_week(cls, value: str | list[int] | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            nums = sorted(set(int(d) for d in value if 1 <= int(d) <= 7))
+            return ",".join(str(d) for d in nums) if nums else None
+        value = value.strip()
+        if not value:
+            return None
+        parts = [p.strip() for p in value.split(",") if p.strip()]
+        for p in parts:
+            if not p.isdigit() or not (1 <= int(p) <= 7):
+                raise ValueError("Thứ trong tuần phải từ 1 (T2) đến 7 (CN)")
+        nums = sorted(set(int(p) for p in parts))
+        return ",".join(str(d) for d in nums)
+
 
 class SchedulePatch(BaseModel):
     medication_name: str | None = Field(default=None, min_length=1, max_length=100)
     slot: int | None = Field(default=None, ge=1, le=3)
     time: str | None = None
+    days_of_week: str | list[int] | None = None
     active: bool | None = None
 
     @field_validator("medication_name")
@@ -74,6 +94,24 @@ class SchedulePatch(BaseModel):
             raise ValueError("Giờ phải theo định dạng HH:mm")
         return value
 
+    @field_validator("days_of_week")
+    @classmethod
+    def clean_days_of_week(cls, value: str | list[int] | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            nums = sorted(set(int(d) for d in value if 1 <= int(d) <= 7))
+            return ",".join(str(d) for d in nums) if nums else None
+        value = value.strip()
+        if not value:
+            return None
+        parts = [p.strip() for p in value.split(",") if p.strip()]
+        for p in parts:
+            if not p.isdigit() or not (1 <= int(p) <= 7):
+                raise ValueError("Thứ trong tuần phải từ 1 (T2) đến 7 (CN)")
+        nums = sorted(set(int(p) for p in parts))
+        return ",".join(str(d) for d in nums)
+
 class EventInput(BaseModel):
     event_uuid: UUID = Field(default_factory=uuid4)
     slot: int | None = Field(default=None, ge=1, le=3)
@@ -89,10 +127,13 @@ class EventInput(BaseModel):
         "PILL_REMOVED",
         "PILL_DISPENSED",
         "DOSE_CONFIRMED",
+        "PILL_REFILLED",
+        "REFILL",
     ]
     payload: dict | None = None
     weight_g: float | None = None
     occurrence_id: int | None = None
+    count: int | None = None
 
     @property
     def resolved_slot(self) -> int:

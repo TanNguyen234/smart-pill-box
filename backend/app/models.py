@@ -31,6 +31,7 @@ class MedicationSchedule(Base):
     medication_name: Mapped[str] = mapped_column(String(100))
     slot: Mapped[int] = mapped_column(Integer)
     time: Mapped[str] = mapped_column(String(5))
+    days_of_week: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

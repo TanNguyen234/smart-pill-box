@@ -569,3 +569,73 @@ def test_sqlite_schema_upgrades_legacy_tables_without_deleting_rows(tmp_path):
         assert {"patient_id", "slot", "device_id", "occurred_at"} <= {c["name"] for c in db.get_columns("device_events")}
         assert {"recipient_id", "note", "status"} <= {c["name"] for c in db.get_columns("alerts")}
         assert "patient_id" in {c["name"] for c in db.get_columns("simulation_state")}
+        assert "days_of_week" in {c["name"] for c in db.get_columns("medication_schedules")}
+
+
+def test_delete_schedule(tmp_path):
+    client = make_client(tmp_path)
+    caregiver = login(client, "caregiver-a@example.test")
+    # Get initial schedules
+    schedules = client.get("/api/schedules", headers=caregiver).json()
+    assert len(schedules) > 0
+    sched_id = schedules[0]["id"]
+
+    # Delete schedule
+    del_res = client.delete(f"/api/schedules/{sched_id}", headers=caregiver)
+    assert del_res.status_code == 200
+    assert del_res.json()["deleted_id"] == sched_id
+
+    # Deleting again should return 404
+    assert client.delete(f"/api/schedules/{sched_id}", headers=caregiver).status_code == 404
+
+
+def test_refill_pills_in_compartment(tmp_path):
+    client = make_client(tmp_path)
+    operator = login(client, "operator@example.test")
+
+    # Cannot refill when lid is closed
+    assert client.post("/api/simulation/events", headers=operator, json={"slot": 1, "event_type": "PILL_REFILLED", "count": 10}).status_code == 409
+
+    # Open lid
+    client.post("/api/simulation/events", headers=operator, json={"slot": 1, "event_type": "LID_OPENED"})
+
+    # Refill 10 pills
+    res = client.post("/api/simulation/events", headers=operator, json={"slot": 1, "event_type": "PILL_REFILLED", "count": 10})
+    assert res.status_code == 200
+    comp1 = res.json()["compartments"][0]
+    assert comp1["pill_count"] == 20
+    assert comp1["weight_grams"] == 10.0
+
+
+def test_flexible_schedule_days_of_week(tmp_path):
+    from datetime import datetime
+    from app.main import process_clock_minute
+    from app.models import DoseOccurrence
+    client = make_client(tmp_path)
+    caregiver = login(client, "caregiver-a@example.test")
+
+    # Create schedule only for Mon, Wed, Fri (1, 3, 5)
+    create_res = client.post("/api/schedules", headers=caregiver, json={
+        "patient_id": 1,
+        "medication_name": "Thuốc Cách Ngày",
+        "slot": 3,
+        "time": "14:00",
+        "days_of_week": "1,3,5"
+    })
+    assert create_res.status_code == 201
+    assert create_res.json()["days_of_week"] == "1,3,5"
+
+    # Tuesday (2026-10-20 is Tuesday -> isoweekday = 2): Should NOT trigger dose
+    tuesday = datetime(2026, 10, 20, 14, 0)
+    with client.app.state.session_factory.begin() as db:
+        process_clock_minute(db, tuesday, patient_id=1)
+        occ = db.scalars(select(DoseOccurrence).where(DoseOccurrence.schedule_id == create_res.json()["id"])).all()
+        assert len(occ) == 0
+
+    # Wednesday (2026-10-21 is Wednesday -> isoweekday = 3): Should trigger dose
+    wednesday = datetime(2026, 10, 21, 14, 0)
+    with client.app.state.session_factory.begin() as db:
+        process_clock_minute(db, wednesday, patient_id=1)
+        occ = db.scalars(select(DoseOccurrence).where(DoseOccurrence.schedule_id == create_res.json()["id"])).all()
+        assert len(occ) == 1
+
