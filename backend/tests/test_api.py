@@ -639,3 +639,25 @@ def test_flexible_schedule_days_of_week(tmp_path):
         occ = db.scalars(select(DoseOccurrence).where(DoseOccurrence.schedule_id == create_res.json()["id"])).all()
         assert len(occ) == 1
 
+
+def test_clear_events(tmp_path):
+    client = make_client(tmp_path)
+    caregiver = login(client, "caregiver-a@example.test")
+    operator = login(client, "operator@example.test")
+
+    # Generate an event
+    client.post("/api/simulation/events", headers=operator, json={"slot": 1, "event_type": "LID_OPENED"})
+    events_res = client.get("/api/events", headers=caregiver)
+    assert events_res.status_code == 200
+    assert len(events_res.json()) >= 1
+
+    # Clear events
+    del_res = client.delete("/api/events", headers=caregiver)
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "ok"
+    assert del_res.json()["deleted_count"] >= 1
+
+    # Verify events are now empty for caregiver
+    events_after = client.get("/api/events", headers=caregiver)
+    assert len(events_after.json()) == 0
+

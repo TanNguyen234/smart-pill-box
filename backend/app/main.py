@@ -605,6 +605,30 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
         rows = db.scalars(query.order_by(DeviceEvent.id.desc())).all()
         return rows
 
+    @app.delete("/api/events")
+    def clear_events(
+        patient_id: int | None = None,
+        slot: int | None = None,
+        user: User = Depends(caregiver_only),
+        db: Session = Depends(get_db),
+    ):
+        p_query = select(Patient.id).where(Patient.caregiver_id == user.id)
+        if patient_id is not None:
+            p_query = p_query.where(Patient.id == patient_id)
+        user_patient_ids = db.scalars(p_query).all()
+        if not user_patient_ids:
+            return {"status": "ok", "deleted_count": 0}
+
+        query = select(DeviceEvent).where(DeviceEvent.patient_id.in_(user_patient_ids))
+        if slot is not None:
+            query = query.where(DeviceEvent.slot == slot)
+        events_to_delete = db.scalars(query).all()
+        count = len(events_to_delete)
+        for ev in events_to_delete:
+            db.delete(ev)
+        db.commit()
+        return {"status": "ok", "deleted_count": count}
+
     @app.get("/api/alerts", response_model=list[AlertOutput])
     def alerts(
         patient_id: int | None = None,
@@ -762,11 +786,11 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                 extra_payload["weight_g"] = new_weight
                 if diff >= 0.3:
                     if compartment["pill_count"] <= 0:
-                        raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
+                        raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết gói thuốc chia sẵn")
                     compartment["pill_count"] -= 1
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
                 elif diff <= -0.4:
-                    # Tăng trọng lượng đáng kể: nạp thêm thuốc
+                    # Tăng trọng lượng đáng kể: nạp thêm gói thuốc
                     added_pills = max(1, round(abs(diff) / 0.5))
                     compartment["pill_count"] += added_pills
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
@@ -775,14 +799,14 @@ def create_app(database_url: str | None = None, jwt_secret: str | None = None) -
                     compartment["weight_grams"] = round(max(0.0, new_weight), 1)
             elif payload.event_type in {"PILL_DISPENSED", "PILL_REMOVED"}:
                 if not compartment["lid_open"]:
-                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy viên")
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi lấy gói thuốc")
                 if compartment["pill_count"] <= 0:
-                    raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết thuốc mẫu")
+                    raise HTTPException(status_code=409, detail=f"Ngăn {target_slot} đã hết gói thuốc chia sẵn")
                 compartment["pill_count"] -= 1
                 compartment["weight_grams"] = round(max(0.0, compartment["weight_grams"] - 0.5), 1)
             elif payload.event_type in {"PILL_REFILLED", "REFILL"}:
                 if not compartment["lid_open"]:
-                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi nạp thêm thuốc")
+                    raise HTTPException(status_code=409, detail=f"Hãy mở nắp ngăn {target_slot} trước khi nạp thêm gói thuốc")
                 refill_count = payload.count or (payload.payload.get("count") if payload.payload else None) or 10
                 refill_count = max(1, int(refill_count))
                 added_weight = round(refill_count * 0.5, 1)
