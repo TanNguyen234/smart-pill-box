@@ -1,5 +1,36 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import './App.css'
+import {
+  IconPillBox,
+  IconPill,
+  IconLidOpen,
+  IconLidClosed,
+  IconSpeaker,
+  IconSpeakerMuted,
+  IconBellRing,
+  IconClock,
+  IconClockRealtime,
+  IconKey,
+  IconVibrate,
+  IconCheck,
+  IconCheckCircle,
+  IconAlertTriangle,
+  IconAlertCircle,
+  IconRotateCcw,
+  IconFastForward,
+  IconRefresh,
+  IconArrowRight,
+  IconX,
+  IconCalendarClock,
+  IconActivity,
+} from './components/Icons'
+import {
+  unlockAudio,
+  playBuzzerAlarm,
+  playConfirmationChime,
+  subscribeAudioUnlock,
+  isAudioReady,
+} from './audio/buzzerAudio'
 
 type User = { email: string; display_name: string; role: string }
 type Compartment = {
@@ -112,13 +143,30 @@ function nextScheduleFor(device: DeviceState): Schedule | undefined {
 }
 
 function PillBoxMark() {
-  return (
-    <svg viewBox="0 0 38 38" aria-hidden="true">
-      <rect x="4" y="6" width="30" height="27" rx="8" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M19 7v25M8 15h7M23 15h7M8 24h7M23 24h7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="19" cy="19" r="2" fill="currentColor" />
-    </svg>
-  )
+  return <IconPillBox size={30} />
+}
+
+function EventIcon({ type }: { type: string }) {
+  switch (type) {
+    case 'LID_OPENED':
+      return <IconLidOpen size={16} />
+    case 'LID_CLOSED':
+      return <IconLidClosed size={16} />
+    case 'PILL_DISPENSED':
+      return <IconPill size={16} />
+    case 'DOSE_CONFIRMED':
+      return <IconCheck size={16} />
+    case 'ALERT_CREATED':
+      return <IconAlertTriangle size={16} />
+    case 'CLOCK_ADVANCED':
+      return <IconFastForward size={16} />
+    case 'SIMULATION_RESET':
+      return <IconRotateCcw size={16} />
+    case 'REMINDER_SENT':
+      return <IconBellRing size={16} />
+    default:
+      return <IconActivity size={16} />
+  }
 }
 
 function eventLabel(event: SimulationEvent) {
@@ -150,31 +198,21 @@ function App() {
   const [device, setDevice] = useState<DeviceState | null>(null)
   const [busySlot, setBusySlot] = useState<number | null>(null)
   const [busyControl, setBusyControl] = useState(false)
-  const [audioEnabled, setAudioEnabled] = useState(false)
-  const audioContext = useRef<AudioContext | null>(null)
+  const [audioEnabled, setAudioEnabled] = useState(true)
+  const [, setAudioUnlocked] = useState(isAudioReady())
   const lastReminderEventId = useRef<number | null>(null)
+  const modeEnsuredRef = useRef(false)
   const recentEvents = device?.recent_events
+  const anyBuzzerActive = Boolean(device?.compartments?.some((c) => c.buzzer_on))
 
-  function playReminderTone() {
-    try {
-      const context = audioContext.current ?? new window.AudioContext()
-      audioContext.current = context
-      const oscillator = context.createOscillator()
-      const gain = context.createGain()
-      oscillator.type = 'sine'
-      oscillator.frequency.value = 880
-      gain.gain.setValueAtTime(0.0001, context.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.13, context.currentTime + 0.025)
-      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.35)
-      oscillator.connect(gain)
-      gain.connect(context.destination)
-      oscillator.start()
-      oscillator.stop(context.currentTime + 0.36)
-    } catch {
-      // Audio is an optional browser feature; the visual alarm remains authoritative.
-    }
-  }
+  // Sync audio unlocked status
+  useEffect(() => {
+    return subscribeAudioUnlock((unlocked) => {
+      setAudioUnlocked(unlocked)
+    })
+  }, [])
 
+  // Poll device state & ensure default mode is REALTIME
   useEffect(() => {
     if (!token) return
     let alive = true
@@ -184,6 +222,11 @@ function App() {
         if (alive) {
           setDevice(result)
           setConnectionError('')
+          // Ensure default reminder mode is REALTIME
+          if (!modeEnsuredRef.current && result.clock_mode !== 'REALTIME') {
+            modeEnsuredRef.current = true
+            void changeClockMode('REALTIME')
+          }
         }
       } catch (error) {
         if (alive) {
@@ -199,35 +242,62 @@ function App() {
     }
   }, [token])
 
+  // Continuous sound when buzzer is active on the pillbox
+  useEffect(() => {
+    if (!audioEnabled || !anyBuzzerActive) return
+
+    // Immediately play alarm chime on trigger
+    playBuzzerAlarm()
+
+    // Repeat medical alarm chime every 3.5 seconds while buzzer is buzzing
+    const interval = window.setInterval(() => {
+      playBuzzerAlarm()
+    }, 3500)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [anyBuzzerActive, audioEnabled])
+
+  // Also play sound when a new reminder event arrives
   useEffect(() => {
     if (!recentEvents) return
     const reminderEvents = recentEvents.filter((event) => event.event_type === 'REMINDER_SENT')
     const newestId = reminderEvents.reduce((latest, event) => Math.max(latest, event.id), 0)
     const previousId = lastReminderEventId.current
-    if (previousId === null || newestId < previousId) {
+    if (previousId === null) {
       lastReminderEventId.current = newestId
+      if (newestId > 0 && anyBuzzerActive && audioEnabled) {
+        playBuzzerAlarm()
+      }
       return
     }
     if (newestId > previousId) {
       lastReminderEventId.current = newestId
-      if (audioEnabled) playReminderTone()
+      if (audioEnabled) {
+        playBuzzerAlarm()
+      }
     }
-  }, [recentEvents, audioEnabled])
+  }, [recentEvents, audioEnabled, anyBuzzerActive])
 
   async function toggleAudio() {
-    try {
-      if (!audioContext.current) audioContext.current = new window.AudioContext()
-      await audioContext.current.resume()
-      setAudioEnabled((enabled) => !enabled)
-      setActionMessage('')
-    } catch {
-      setActionMessage('Trình duyệt không cho phép bật âm thanh. Đèn và chữ nhắc vẫn hoạt động.')
-    }
+    await unlockAudio()
+    setAudioEnabled((enabled) => !enabled)
+    setActionMessage('')
+  }
+
+  async function handleTestSound() {
+    await unlockAudio()
+    setAudioEnabled(true)
+    playBuzzerAlarm()
+    setActionMessage('Đang phát thử âm thanh còi báo y tế của hộp thuốc...')
+    setTimeout(() => setActionMessage(''), 3000)
   }
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoginError('')
+    void unlockAudio()
     try {
       const result = await request<{ access_token: string; user: User }>('/api/auth/login', undefined, {
         method: 'POST',
@@ -240,6 +310,7 @@ function App() {
       setUser(result.user)
       setToken(result.access_token)
       lastReminderEventId.current = null
+      modeEnsuredRef.current = false
       setPassword('')
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Đăng nhập thất bại')
@@ -252,8 +323,8 @@ function App() {
     setDevice(null)
     setConnectionError('')
     setActionMessage('')
-    setAudioEnabled(false)
     lastReminderEventId.current = null
+    modeEnsuredRef.current = false
   }
 
   async function sendEvent(slot: number, eventType: EventType, extraPayload: Record<string, unknown> = {}) {
@@ -285,6 +356,7 @@ function App() {
   async function takeOnePill(item: Compartment) {
     const nextWeight = Math.max(0, Number((item.weight_grams - 0.5).toFixed(1)))
     await sendEvent(item.slot, 'WEIGHT_READING', { weight_g: nextWeight })
+    if (audioEnabled) playConfirmationChime()
   }
 
   async function injectNoise(item: Compartment) {
@@ -298,6 +370,7 @@ function App() {
       'CONFIRM_PRESSED',
       item.current_occurrence_id ? { occurrence_id: item.current_occurrence_id } : {}
     )
+    if (audioEnabled) playConfirmationChime()
   }
 
   async function changeClockMode(mode: 'SIMULATION' | 'REALTIME') {
@@ -329,7 +402,6 @@ function App() {
     setBusyControl(true)
     setActionMessage('')
     try {
-      // API accepts at most 60 minutes per request; span later milestones safely.
       let remaining = minutes
       while (remaining > 0) {
         const chunk = Math.min(60, remaining)
@@ -375,11 +447,17 @@ function App() {
         <div className="login-art" aria-hidden="true">
           <div className="orbit orbit-one" />
           <div className="orbit orbit-two" />
-          <div className="art-box"><PillBoxMark /><span>SIM—001</span></div>
+          <div className="art-box">
+            <IconPillBox size={64} />
+            <span>SIM—001</span>
+          </div>
           <div className="art-caption">THREE SLOTS<br />ONE SHARED API</div>
         </div>
         <section className="login-panel">
-          <div className="brand-lockup"><span className="brand-icon"><PillBoxMark /></span><span>SMART PILL BOX<small>SIMULATOR / 01</small></span></div>
+          <div className="brand-lockup">
+            <span className="brand-icon"><IconPillBox size={22} /></span>
+            <span>SMART PILL BOX<small>SIMULATOR / 01</small></span>
+          </div>
           <div className="login-copy">
             <p className="eyebrow">BÀN ĐIỀU KHIỂN THIẾT BỊ</p>
             <h1>Một chiếc hộp.<br /><em>Ba ngăn thuốc.</em></h1>
@@ -391,14 +469,18 @@ function App() {
             <label htmlFor="password">Mật khẩu</label>
             <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
             {loginError && <p className="form-error" role="alert">{loginError}</p>}
-            <button className="primary-button login-button" type="submit">Đăng nhập <span aria-hidden="true">↗</span></button>
+            <button className="primary-button login-button" type="submit">
+              <span>Đăng nhập</span>
+              <IconArrowRight size={16} />
+            </button>
             <button
               type="button"
               className="demo-account-hint"
-              onClick={() => { setEmail('operator@example.test'); setPassword('Password123!'); }}
+              onClick={() => { setEmail('operator@example.test'); setPassword('Password123!'); void unlockAudio(); }}
               title="Bấm để điền tài khoản Operator mặc định"
             >
-              🔑 Điền nhanh: operator@example.test • Password123!
+              <IconKey size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: '6px' }} />
+              <span>Điền nhanh: operator@example.test • Password123!</span>
             </button>
           </form>
           <p className="login-footnote">Dữ liệu demo · Không dùng hồ sơ bệnh nhân thật</p>
@@ -410,6 +492,7 @@ function App() {
   const nextSchedule = device ? nextScheduleFor(device) : undefined
   const events = device?.recent_events ?? []
   const loading = Boolean(token && !device && !connectionError)
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -419,7 +502,25 @@ function App() {
         </a>
         <div className="topbar-right">
           <div className={`connection ${connectionError ? 'is-offline' : ''}`}><span className="status-dot" />{connectionError ? 'Mất kết nối' : 'Backend trực tuyến'}</div>
-          <button className={`audio-toggle ${audioEnabled ? 'audio-on' : ''}`} type="button" onClick={() => void toggleAudio()} aria-pressed={audioEnabled}>{audioEnabled ? '♫ Còi đang bật' : '♫ Bật âm thanh'}</button>
+          <button
+            className={`audio-toggle ${audioEnabled ? 'audio-on' : ''}`}
+            type="button"
+            onClick={() => void toggleAudio()}
+            aria-pressed={audioEnabled}
+            title={audioEnabled ? 'Click để tắt âm thanh còi' : 'Click để bật âm thanh còi'}
+          >
+            {audioEnabled ? <IconSpeaker size={16} /> : <IconSpeakerMuted size={16} />}
+            <span>{audioEnabled ? 'Còi đang bật' : 'Còi đang tắt'}</span>
+          </button>
+          <button
+            className="test-sound-btn"
+            type="button"
+            onClick={() => void handleTestSound()}
+            title="Bấm để phát thử âm thanh chuông báo y tế"
+          >
+            <IconBellRing size={15} />
+            <span>Thử còi</span>
+          </button>
           <span className="user-chip">{user?.display_name ?? 'Operator'}</span>
           <button className="text-button" type="button" onClick={logout}>Đăng xuất</button>
         </div>
@@ -439,25 +540,67 @@ function App() {
           </div>
         </section>
 
-        {connectionError && <div className="alert-banner" role="status"><span>!</span><div><strong>Không thể đồng bộ với backend</strong><small>{connectionError} · Đang thử kết nối lại mỗi 2 giây.</small></div></div>}
-        {actionMessage && <div className="action-banner" role="alert"><span>!</span><div><strong>Thao tác chưa hoàn tất</strong><small>{actionMessage}</small></div><button type="button" onClick={() => setActionMessage('')} aria-label="Đóng thông báo">×</button></div>}
+        {connectionError && (
+          <div className="alert-banner" role="status">
+            <IconAlertCircle size={20} />
+            <div><strong>Không thể đồng bộ với backend</strong><small>{connectionError} · Đang thử kết nối lại mỗi 2 giây.</small></div>
+          </div>
+        )}
+        {actionMessage && (
+          <div className="action-banner" role="alert">
+            <IconAlertTriangle size={20} />
+            <div><strong>Thông báo hệ thống</strong><small>{actionMessage}</small></div>
+            <button type="button" onClick={() => setActionMessage('')} aria-label="Đóng thông báo">
+              <IconX size={16} />
+            </button>
+          </div>
+        )}
         {loading && !device && <div className="loading-card"><span className="loader" />Đang tải trạng thái từ SQLite…</div>}
 
         <section className="simulation-console" aria-label="Điều khiển đồng hồ mô phỏng">
-          <div className="console-copy"><span className="console-icon">◷</span><div><p className="eyebrow">CHẾ ĐỘ NHẮC THUỐC</p><strong>{device?.clock_mode === 'REALTIME' ? 'Tự động theo giờ thật' : 'Đồng hồ mô phỏng'}</strong><small>{device?.clock_mode === 'REALTIME' ? 'Backend tự kiểm tra giờ uống liên tục, kể cả khi đóng website. Giữ FastAPI đang chạy.' : 'Tiến phút chủ động để trình diễn nhắc giờ và cảnh báo.'}</small></div></div>
+          <div className="console-copy">
+            <span className="console-icon">
+              {device?.clock_mode === 'REALTIME' ? <IconClockRealtime size={24} /> : <IconClock size={24} />}
+            </span>
+            <div>
+              <p className="eyebrow">CHẾ ĐỘ NHẮC THUỐC</p>
+              <strong>{device?.clock_mode === 'REALTIME' ? 'Tự động theo giờ thật (Mặc định)' : 'Đồng hồ mô phỏng'}</strong>
+              <small>{device?.clock_mode === 'REALTIME' ? 'Backend tự kiểm tra giờ uống liên tục theo thời gian thực, kể cả khi đóng website. Giữ FastAPI đang chạy.' : 'Tiến phút chủ động để trình diễn nhắc giờ và cảnh báo.'}</small>
+            </div>
+          </div>
           <div className="clock-mode-toggle" role="group" aria-label="Chế độ thời gian">
-            <button type="button" className={device?.clock_mode !== 'REALTIME' ? 'mode-active' : ''} disabled={!device || busyControl} onClick={() => void changeClockMode('SIMULATION')}>Mô phỏng</button>
-            <button type="button" className={device?.clock_mode === 'REALTIME' ? 'mode-active' : ''} disabled={!device || busyControl} onClick={() => void changeClockMode('REALTIME')}>Thời gian thực</button>
+            <button type="button" className={device?.clock_mode === 'REALTIME' ? 'mode-active' : ''} disabled={!device || busyControl} onClick={() => void changeClockMode('REALTIME')}>
+              Thời gian thực (Mặc định)
+            </button>
+            <button type="button" className={device?.clock_mode !== 'REALTIME' ? 'mode-active' : ''} disabled={!device || busyControl} onClick={() => void changeClockMode('SIMULATION')}>
+              Mô phỏng
+            </button>
           </div>
           <div className="clock-buttons">
-            {[1, 2, 5].map((minutes) => <button type="button" key={minutes} disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void advanceClock(minutes)}>{busyControl ? 'Đang chạy…' : `+${minutes} phút`}</button>)}
-            <button className="milestone-button" type="button" disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void advanceClock(device?.next_milestone_minutes ?? 1)} title="Nhảy đến mốc nhắc thuốc hoặc quá hạn gần nhất">Mốc tiếp theo (+{device?.next_milestone_minutes ?? 1}p)</button>
-            <button className="reset-button" type="button" disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void resetSimulation()}>Đặt lại hộp</button>
+            {[1, 2, 5].map((minutes) => (
+              <button type="button" key={minutes} disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void advanceClock(minutes)}>
+                {busyControl ? 'Đang chạy…' : `+${minutes} phút`}
+              </button>
+            ))}
+            <button className="milestone-button" type="button" disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void advanceClock(device?.next_milestone_minutes ?? 1)} title="Nhảy đến mốc nhắc thuốc hoặc quá hạn gần nhất">
+              Mốc tiếp theo (+{device?.next_milestone_minutes ?? 1}p)
+            </button>
+            <button className="reset-button" type="button" disabled={!device || busyControl || device.clock_mode === 'REALTIME'} onClick={() => void resetSimulation()}>
+              Đặt lại hộp
+            </button>
           </div>
         </section>
 
         <section className="overview-row">
-          <div className="section-heading"><div><p className="eyebrow">TRẠNG THÁI THIẾT BỊ</p><h2>Ba ngăn, một lịch trình</h2></div><span className={`live-label ${connectionError ? 'offline-label' : ''}`}><span className="status-dot" />{connectionError ? 'CHỜ KẾT NỐI' : 'CẬP NHẬT 2 GIÂY'}</span></div>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">TRẠNG THÁI THIẾT BỊ</p>
+              <h2>Ba ngăn, một lịch trình</h2>
+            </div>
+            <span className={`live-label ${connectionError ? 'offline-label' : ''}`}>
+              <span className="status-dot" />{connectionError ? 'CHỜ KẾT NỐI' : 'CẬP NHẬT 2 GIÂY'}
+            </span>
+          </div>
           <div className="compartment-grid">
             {(device?.compartments ?? []).map((item, index) => (
               <article className={`compartment-card slot-${item.slot} ${item.lid_open ? 'lid-open' : ''} ${item.buzzer_on ? 'reminder-active' : ''}`} key={item.slot} style={{ animationDelay: `${index * 90}ms` }}>
@@ -528,7 +671,7 @@ function App() {
 
                 <div className={`buzzer-line ${item.buzzer_on ? 'buzzer-active' : ''}`}>
                   <span className={`buzzer-indicator ${item.buzzer_on ? 'buzzer-on' : ''}`}>
-                    {item.buzzer_on ? '🔊' : '🔈'}
+                    {item.buzzer_on ? <IconSpeaker size={18} /> : <IconSpeakerMuted size={18} />}
                   </span>
                   <div className="buzzer-copy">
                     <span>Còi nhắc hộp thuốc</span>
@@ -542,24 +685,47 @@ function App() {
                 </div>
 
                 <div className="compartment-actions">
-                  <button className={`lid-button ${item.lid_open ? 'secondary-button' : 'primary-button'}`} type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void sendEvent(item.slot, item.lid_open ? 'LID_CLOSED' : 'LID_OPENED')}>
-                    <span className="btn-icon">{item.lid_open ? '📥' : '📤'}</span>
+                  <button
+                    className={`lid-button ${item.lid_open ? 'secondary-button' : 'primary-button'}`}
+                    type="button"
+                    disabled={busySlot === item.slot || busyControl}
+                    onClick={() => void sendEvent(item.slot, item.lid_open ? 'LID_CLOSED' : 'LID_OPENED')}
+                  >
+                    <span className="btn-icon">{item.lid_open ? <IconLidClosed size={16} /> : <IconLidOpen size={16} />}</span>
                     <span>{busySlot === item.slot ? 'Đang gửi…' : item.lid_open ? 'Đóng nắp ngăn' : 'Mở nắp ngăn'}</span>
                   </button>
-                  <button className="dispense-button" type="button" disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl} onClick={() => void takeOnePill(item)} title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết thuốc mẫu' : undefined}>
-                    <span className="btn-icon">💊</span>
+                  <button
+                    className="dispense-button"
+                    type="button"
+                    disabled={!item.lid_open || item.pill_count <= 0 || busySlot === item.slot || busyControl}
+                    onClick={() => void takeOnePill(item)}
+                    title={!item.lid_open ? 'Mở nắp ngăn trước' : item.pill_count <= 0 ? 'Ngăn đã hết thuốc mẫu' : undefined}
+                  >
+                    <span className="btn-icon"><IconPill size={16} /></span>
                     <span>Lấy một viên</span>
                     <span className="btn-weight-change">−0,5 g</span>
                   </button>
-                  <button className="noise-button" type="button" disabled={!item.lid_open || busySlot === item.slot || busyControl} onClick={() => void injectNoise(item)} title="Thử nhiễu tải trọng 0.1g (kiểm thử T033, không làm giảm viên)">
-                    <span className="btn-icon">⚡</span>
+                  <button
+                    className="noise-button"
+                    type="button"
+                    disabled={!item.lid_open || busySlot === item.slot || busyControl}
+                    onClick={() => void injectNoise(item)}
+                    title="Thử nhiễu tải trọng 0.1g (kiểm thử T033, không làm giảm viên)"
+                  >
+                    <span className="btn-icon"><IconVibrate size={15} /></span>
                     <span>Thử nhiễu cân</span>
                     <span className="btn-weight-change">−0,1 g</span>
                   </button>
                   {item.can_confirm && (
-                    <button className="confirm-button" type="button" disabled={busySlot === item.slot || busyControl} onClick={() => void confirmDose(item)}>
+                    <button
+                      className="confirm-button"
+                      type="button"
+                      disabled={busySlot === item.slot || busyControl}
+                      onClick={() => void confirmDose(item)}
+                    >
                       <span className="confirm-glow" />
-                      <span>✓ Nút xác nhận trên hộp</span>
+                      <span className="btn-icon"><IconCheckCircle size={16} /></span>
+                      <span>Nút xác nhận trên hộp</span>
                     </button>
                   )}
                 </div>
@@ -573,23 +739,59 @@ function App() {
 
         <section className="lower-grid">
           <div className="schedule-panel">
-            <div className="section-heading compact"><div><p className="eyebrow">ĐỒNG BỘ TỪ DATABASE</p><h2>Lịch đang bật</h2></div><span className="count-pill">{device?.active_schedules.length ?? 0}</span></div>
-            {nextSchedule && <div className="next-dose"><div className="next-icon">↗</div><div><span>LỊCH TIẾP THEO</span><strong>{nextSchedule.medication_name}</strong><small>Ngăn {nextSchedule.slot} · {nextSchedule.time}</small></div><time>{nextSchedule.time}</time></div>}
+            <div className="section-heading compact">
+              <div><p className="eyebrow">ĐỒNG BỘ TỪ DATABASE</p><h2>Lịch đang bật</h2></div>
+              <span className="count-pill">{device?.active_schedules.length ?? 0}</span>
+            </div>
+            {nextSchedule && (
+              <div className="next-dose">
+                <div className="next-icon"><IconCalendarClock size={20} /></div>
+                <div>
+                  <span>LỊCH TIẾP THEO</span>
+                  <strong>{nextSchedule.medication_name}</strong>
+                  <small>Ngăn {nextSchedule.slot} · {nextSchedule.time}</small>
+                </div>
+                <time>{nextSchedule.time}</time>
+              </div>
+            )}
             <div className="schedule-list">
-              {(device?.active_schedules ?? []).map((schedule) => <div className="schedule-row" key={schedule.id}><time>{schedule.time}</time><span className="schedule-slot">N{schedule.slot}</span><strong>{schedule.medication_name}</strong><span className="active-tag">ĐANG BẬT</span></div>)}
+              {(device?.active_schedules ?? []).map((schedule) => (
+                <div className="schedule-row" key={schedule.id}>
+                  <time>{schedule.time}</time>
+                  <span className="schedule-slot">N{schedule.slot}</span>
+                  <strong>{schedule.medication_name}</strong>
+                  <span className="active-tag">ĐANG BẬT</span>
+                </div>
+              ))}
               {device && device.active_schedules.length === 0 && <p className="empty-schedules">Chưa có lịch đang bật. Lịch mới từ ứng dụng Flutter sẽ xuất hiện tại đây.</p>}
             </div>
-            <p className="sync-note"><span className="sync-arrows">↻</span> Đồng bộ mỗi 2 giây · lịch dùng chung với ứng dụng Flutter</p>
+            <p className="sync-note"><span className="sync-arrows"><IconRefresh size={13} /></span> Đồng bộ mỗi 2 giây · lịch dùng chung với ứng dụng Flutter</p>
           </div>
 
           <aside className="activity-panel">
-            <div className="section-heading compact"><div><p className="eyebrow">NHẬT KÝ THIẾT BỊ</p><h2>Thao tác gần đây</h2></div><span className="count-pill">{events.length}</span></div>
+            <div className="section-heading compact">
+              <div><p className="eyebrow">NHẬT KÝ THIẾT BỊ</p><h2>Thao tác gần đây</h2></div>
+              <span className="count-pill">{events.length}</span>
+            </div>
             <div className="activity-list">
-              {events.map((event) => <div className="activity-row" key={event.id}><span className={`activity-symbol ${event.event_type === 'ALERT_CREATED' ? 'activity-alert' : event.event_type === 'DOSE_CONFIRMED' ? 'activity-confirmed' : ''}`}>{event.event_type === 'LID_OPENED' ? '↗' : event.event_type === 'LID_CLOSED' ? '↙' : event.event_type === 'PILL_DISPENSED' ? '−' : event.event_type === 'DOSE_CONFIRMED' ? '✓' : event.event_type === 'ALERT_CREATED' ? '!' : event.event_type === 'CLOCK_ADVANCED' ? '↻' : event.event_type === 'SIMULATION_RESET' ? '⟲' : '♫'}</span><div className="activity-copy"><strong>{eventLabel(event)}</strong><small>{event.payload.slot ? `Ngăn ${event.payload.slot}` : 'Hộp mô phỏng'} · {event.payload.virtual_time ? clockLabel(String(event.payload.virtual_time)) : new Date(event.created_at).toLocaleTimeString('vi-VN')}</small></div></div>)}
+              {events.map((event) => (
+                <div className="activity-row" key={event.id}>
+                  <span className={`activity-symbol ${event.event_type === 'ALERT_CREATED' ? 'activity-alert' : event.event_type === 'DOSE_CONFIRMED' ? 'activity-confirmed' : ''}`}>
+                    <EventIcon type={event.event_type} />
+                  </span>
+                  <div className="activity-copy">
+                    <strong>{eventLabel(event)}</strong>
+                    <small>
+                      {event.payload.slot ? `Ngăn ${event.payload.slot}` : 'Hộp mô phỏng'} ·{' '}
+                      {event.payload.virtual_time ? clockLabel(String(event.payload.virtual_time)) : new Date(event.created_at).toLocaleTimeString('vi-VN')}
+                    </small>
+                  </div>
+                </div>
+              ))}
               {device && events.length === 0 && <p className="empty-activity">Chưa có thao tác trong phiên demo. Mở nắp hoặc tiến đồng hồ để bắt đầu.</p>}
               {!device && <p className="empty-activity">Nhật ký sẽ xuất hiện sau khi tải trạng thái thiết bị.</p>}
             </div>
-            <p className="sync-note"><span className="sync-arrows">↻</span> Lịch sử sự kiện được lưu trên backend</p>
+            <p className="sync-note"><span className="sync-arrows"><IconRefresh size={13} /></span> Lịch sử sự kiện được lưu trên backend</p>
           </aside>
         </section>
 
