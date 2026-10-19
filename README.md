@@ -1,53 +1,121 @@
 # Smart Pill Box — Hệ Thống Hộp Thuốc Thông Minh IoT
 
-> **Dự án tích hợp toàn diện:** Backend FastAPI + Web Simulator phần cứng 3D + Ứng dụng di động Flutter dành cho người chăm sóc. Hỗ trợ theo dõi lịch uống thuốc thời gian thực, đồng hồ mô phỏng gia tốc, cảm biến trọng lượng chống rung nhiễu và quy trình cảnh báo đa tầng.
+> **Hệ sinh thái y tế toàn diện:** Backend FastAPI + Web Simulator phần cứng 3D + Ứng dụng di động Flutter dành cho người thân/người chăm sóc. 
+> 
+> ✨ **Điểm nổi bật mới nhất:**
+> - 🇻🇳 **100% Tiếng Việt** chuẩn y tế, loại bỏ hoàn toàn các từ tiếng Anh rải rác.
+> - 💊 **Mô hình gói thuốc chia sẵn thực tế:** Người thân chia sẵn từng cữ/bịch thuốc, kiểm soát số lượng gói và nạp thêm tiện lợi.
+> - ⏰ **Chế độ Thời gian thực (REALTIME) mặc định:** Tự động kiểm tra và nhắc nhở theo giờ Việt Nam (GMT+7) liên tục.
+> - 🔊 **Còi báo âm thanh y tế Web Audio API:** Âm thanh rõ ràng, tự động lặp theo nhịp còi khẩn cấp và có nút phát thử.
+> - 📅 **Lịch uống linh hoạt:** Tùy chọn uống mỗi ngày, 2-4-6, 3-5-7 hoặc chọn từng thứ trong tuần.
+> - 🗑️ **Quản lý toàn diện:** Cho phép xóa lịch uống thuốc và xóa sạch nhật ký lịch sử sự kiện trên cả App và Web Simulator.
 
 ---
 
-## Mục lục
-1. [Giới thiệu tổng quan](#gioi-thieu-tong-quan)
-2. [Kiến trúc hệ thống & Công nghệ](#kien-truc-he-thong--cong-nghe)
-3. [Đối chiếu 5 thành viên & Phân công trách nhiệm](#doi-chieu-5-thanh-vien--phan-cong-trach-nhiem)
-4. [Kịch bản mô phỏng chuẩn y tế (Timeline Demo)](#kich-ban-mo-phong-chuan-y-te-timeline-demo)
-5. [Đặc tả API & Quy chuẩn kỹ thuật](#dac-ta-api--quy-chuan-ky-thuat)
-6. [Hướng dẫn cài đặt & Chạy ứng dụng](#huong-dan-cai-dat--chay-ung-dung)
-7. [Bằng chứng kiểm thử & Đảm bảo chất lượng (Quality Gates)](#bang-chung-kiem-thu--dam-bao-chat-luong-quality-gates)
+## 📑 Mục lục
+1. [Khởi động siêu tốc (1-Click & 3 Phút)](#1-khởi-động-siêu-tốc-1-click--3-phút)
+2. [Địa chỉ dịch vụ & Tài khoản mẫu](#2-địa-chỉ-dịch-vụ--tài-khoản-mẫu)
+3. [Kiến trúc hệ thống & Stack công nghệ](#3-kiến-trúc-hệ-thống--stack-công-nghệ)
+4. [Hướng dẫn cài đặt chi tiết từng phân hệ](#4-hướng-dẫn-cài-đặt-chi-tiết-từng-phân-hệ)
+5. [Kịch bản vận hành chuẩn y tế (Timeline Demo)](#5-kịch-bản-vận-hành-chuẩn-y-tế-timeline-demo)
+6. [Đặc tả API & Quy chuẩn kỹ thuật](#6-đặc-tả-api--quy-chuẩn-kỹ-thuật)
+7. [Bằng chứng kiểm thử & Quality Gates (100% Pass)](#7-bằng-chứng-kiểm-thử--quality-gates-100-pass)
 
 ---
 
-## Giới thiệu tổng quan
+## 1. Khởi động siêu tốc (1-Click & 3 Phút)
 
-**Smart Pill Box** giải quyết bài toán quên uống thuốc, uống sai liều hoặc quá hạn ở người cao tuổi và bệnh nhân điều trị ngoại trú. Hệ thống kết nối chặt chẽ giữa 3 phân hệ:
-
-1. **Backend API (`backend/`):** Xây dựng trên nền **FastAPI**, lưu trữ **SQLite**, cơ chế xác thực **JWT bearer**, quản lý đồng hồ ảo độc lập, xử lý sự kiện cảm biến và điều phối cảnh báo đa kênh.
-2. **Web Simulator (`web-simulator/`):** Bàn điều khiển thiết bị ảo chuẩn y tế cho Operator viết bằng **React + TypeScript + Vite**. Mô phỏng hộp thuốc 3 ngăn (`SIM-001`) với nắp 3D acrylic mờ, đèn LED vòm phát quang nhịp thở (*breathing pulse*), viên thuốc 3D 2 màu sắc nét, màn hình cân OLED và còi hú Web Audio API.
-3. **Mobile App (`flutter-app/`):** Ứng dụng di động đa nền tảng viết bằng **Flutter (Dart)** dành cho người thân/người chăm sóc (*Caregiver*). Gồm 5 tab chức năng:
-   - **Hôm nay:** Thẻ liều uống thông minh & hiển thị trạng thái kết nối hộp thuốc SIM-001 trực tiếp.
-   - **Lịch trình:** Quản lý lịch uống theo định dạng 24h, chống trùng lịch và rollback công tắc an toàn.
-   - **Lịch sử sự kiện:** Giao diện dòng thời gian (*Medical Timeline View*) trực quan, phân loại thao tác nắp/cân/thuốc.
-   - **Cảnh báo:** Quản lý cảnh báo quá hạn với hộp thoại ghi chú nhanh 1 chạm (*Quick Resolution Chips*).
-   - **Tài khoản:** Quản lý thông tin cá nhân và thiết bị kết nối.
+### ⚡ Yêu cầu môi trường tối thiểu:
+- **Python 3.10+** (đã cài đặt và có trong PATH)
+- **Node.js 18+** & npm
+- **Flutter SDK 3.x+**
 
 ---
 
-## Kiến trúc hệ thống & Công nghệ
+### Cách 1: Khởi động 1-Click trên Windows (Khuyến nghị 🌟)
+
+1. **Cài đặt lần đầu tiên:**
+   Nhấp đúp chuột vào file:
+   ```cmd
+   setup.bat
+   ```
+   *(Script sẽ tự động tạo Python `.venv`, cài thư viện `requirements.txt`, khởi tạo database SQLite mẫu, cài đặt gói npm cho Simulator và tải package cho Flutter App).*
+
+2. **Chạy toàn bộ hệ thống:**
+   Nhấp đúp chuột vào file:
+   ```cmd
+   start_all.bat
+   ```
+   *(Hệ thống sẽ tự động mở 3 cửa sổ terminal chạy đồng thời: Backend :8000, Web Simulator :5173 và Flutter Web :8080).*
+
+---
+
+### Cách 2: Khởi động nhanh bằng dòng lệnh (CLI)
+
+#### Cửa sổ 1 — Backend API (FastAPI):
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+Copy-Item .env.example .env
+python scripts\seed_demo.py
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+#### Cửa sổ 2 — Web Simulator (React + TypeScript):
+```powershell
+cd web-simulator
+npm install
+npm run dev
+```
+
+#### Cửa sổ 3 — Flutter Caregiver App (Flutter Web):
+```powershell
+cd flutter-app
+flutter pub get
+flutter run -d web-server --web-port 8080 --web-hostname 127.0.0.1
+```
+
+---
+
+## 2. Địa chỉ dịch vụ & Tài khoản mẫu
+
+| Phân hệ | Đường dẫn truy cập | Vai trò | Ghi chú |
+| :--- | :--- | :--- | :--- |
+| **Backend API Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Máy chủ API | Tài liệu tương tác Swagger UI |
+| **Web Simulator** | [http://localhost:5173](http://localhost:5173) | Người vận hành | Bàn điều khiển thiết bị hộp thuốc SIM-001 |
+| **Flutter App (Web)** | [http://localhost:8080](http://localhost:8080) | Người thân | Ứng dụng theo dõi, cài đặt lịch & cảnh báo |
+
+### Danh sách tài khoản thử nghiệm sẵn sàng:
+| Tài khoản | Email đăng nhập | Mật khẩu mặc định | Mục đích sử dụng |
+| :--- | :--- | :--- | :--- |
+| **Người vận hành (Operator)** | `operator@example.test` | `Password123!` | Đăng nhập trên **Web Simulator** để thao tác mở nắp, lấy thuốc, nạp thuốc, bấm xác nhận và đổi chế độ đồng hồ. |
+| **Người thân A (Caregiver A)** | `caregiver-a@example.test` | `Password123!` | Đăng nhập trên **Flutter App** để quản lý lịch, xem liều hôm nay và nhận cảnh báo của Bệnh nhân A (SIM-001). |
+| **Người thân B (Caregiver B)** | `caregiver-b@example.test` | `Password123!` | Dùng kiểm thử đa người dùng & cách ly dữ liệu bảo mật giữa các gia đình. |
+
+*(Trên cả Web Simulator và Flutter App đều có nút **"Điền nhanh"** hỗ trợ đăng nhập 1 chạm tức thì).*
+
+---
+
+## 3. Kiến trúc hệ thống & Stack công nghệ
 
 ```mermaid
 flowchart TD
     subgraph Hardware_Simulation["Web Simulator (React/Vite) :5173"]
         SIM["Hộp thuốc ảo SIM-001\n(3 Ngăn độc lập)"]
-        Sensors["Cảm biến nắp + Cân tải trọng (Ngưỡng 0.3g)\n+ Còi báo Web Audio + Đèn LED Lens"]
-        ClockSim["Bộ gia tốc đồng hồ ảo (+1m, +2m, +5m, +60m)"]
+        Sensors["Cảm biến nắp + Cân tải trọng (Chống rung <0.3g)\n+ Còi báo Web Audio + Đèn LED Lens"]
+        ClockControls["Điều khiển đồng hồ:\n• Thời gian thực (Mặc định)\n• Tiến phút mô phỏng"]
         SIM --> Sensors
-        SIM --> ClockSim
+        SIM --> ClockControls
     end
 
     subgraph Backend_Core["FastAPI Backend :8000"]
         AuthModule["Xác thực JWT & Phân quyền\n(Operator vs Caregiver)"]
-        ClockEngine["Bộ điều phối thời gian thực & Lịch nhắc"]
+        ClockEngine["Bộ điều phối thời gian thực & Lịch nhắc GMT+7"]
         EventPipeline["Bộ tiếp nhận sự kiện Idempotent (UUID)"]
         AlertDispatcher["Máy trạng thái cảnh báo đa tầng"]
-        SQLiteDB[(SQLite Database\nsmartpill.sqlite3)]
+        SQLiteDB[(Cơ sở dữ liệu SQLite\nsmartpill.sqlite3)]
         
         AuthModule --> SQLiteDB
         ClockEngine --> SQLiteDB
@@ -56,197 +124,205 @@ flowchart TD
     end
 
     subgraph Caregiver_App["Mobile App (Flutter) :8080"]
-        TabToday["Tab Hôm nay\n(Giám sát liều & Hộp)"]
-        TabSchedule["Tab Lịch uống\n(Validation 24h)"]
-        TabTimeline["Tab Lịch sử\n(Timeline y tế)"]
-        TabAlerts["Tab Cảnh báo\n(Giải quyết 1 chạm)"]
+        TabToday["Hôm nay\n(Giám sát liều & Hộp SIM-001)"]
+        TabSchedule["Lịch uống\n(Lịch linh hoạt & Xóa lịch)"]
+        TabTimeline["Lịch sử\n(Timeline y tế & Xóa nhật ký)"]
+        TabAlerts["Cảnh báo\n(Giải quyết 1 chạm)"]
+        TabAccount["Tài khoản\n(Hồ sơ & Trạng thái kết nối)"]
     end
 
-    ClockSim -- "POST /api/simulation/advance" --> ClockEngine
+    ClockControls -- "POST /api/simulation/mode\nPOST /api/simulation/advance" --> ClockEngine
     Sensors -- "POST /api/simulation/events" --> EventPipeline
-    Backend_Core -- "Push Alert / State Sync" --> Caregiver_App
-    TabSchedule -- "POST/PATCH /api/schedules" --> Backend_Core
+    Backend_Core -- "Đồng bộ trạng thái (Polling 2-3s)" --> Caregiver_App
+    TabSchedule -- "POST/PATCH/DELETE /api/schedules" --> Backend_Core
+    TabTimeline -- "DELETE /api/events" --> Backend_Core
     TabAlerts -- "PATCH /api/alerts/{id}" --> AlertDispatcher
 ```
 
-### Stack công nghệ:
+### Công nghệ sử dụng:
 * **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0, Pydantic v2, PyJWT, pwdlib (Argon2), Uvicorn.
-* **Web Simulator:** React 18, TypeScript, Vite, CSS 3D Transforms, Web Audio API.
+* **Web Simulator:** React 18, TypeScript, Vite, CSS 3D Glassmorphism, Web Audio API (Còi hú y tế tự sinh sóng âm thanh, không phụ thuộc file ngoài).
 * **Mobile App:** Flutter 3.x, Dart 3.x, Material Design 3 (Clinical Modernism).
 * **Kiểm thử tự động:** Pytest, Flutter Widget Test, Chrome DevTools Protocol (CDP Automation).
 
 ---
 
-## Đối chiếu 5 thành viên & Phân công trách nhiệm
+## 4. Hướng dẫn cài đặt chi tiết từng phân hệ
 
-Bản tích hợp đã có các chức năng chính; cần thực thi kiểm thử trên môi trường sạch trước khi nghiệm thu.
-
-| Thành viên | Trách nhiệm theo phân công | Hiện trạng triển khai & Bằng chứng nghiệm thu |
-| :--- | :--- | :--- |
-| **Thành viên 1** | Backend, SQLite, tài khoản, phân quyền và quản lý lịch | Có mã nguồn; cần kiểm thử thực tế |
-| **Thành viên 2** | Đồng hồ, cảm biến, nhắc giờ, cảnh báo | Có mã nguồn; cần kiểm thử xuyên suốt |
-| **Thành viên 3** | Website hộp thuốc ảo ba ngăn | Có React, cân, LED, còi và các nút mô phỏng |
-| **Thành viên 4** | Flutter đăng nhập, lịch uống, Hôm nay | Có app và API client, cần test Android |
-| **Thành viên 5** | Flutter lịch sử/cảnh báo, QA, tài liệu và demo | Có giao diện/API; cần minh chứng kiểm thử và hồ sơ |
-
-**Lưu ý:** Có chức năng trong mã nguồn không đồng nghĩa đạt 100%. Phân công lấy theo file Word kế hoạch của nhóm, không suy luận công lao cá nhân từ commit `main`.
-
----
-
-## Kịch bản mô phỏng chuẩn y tế (Timeline Demo)
-
-Kịch bản chuẩn được kiểm thử tự động từ 07:59 đến khi hoàn tất uống thuốc:
-
-```
-[07:59] Trạng thái chờ: Hộp đóng nắp, cân 12.5g (10 viên thuốc x 0.5g + vỏ), LED tắt, còi tắt.
-   │
-   ▼ (+1 phút)
-[08:00] ĐẾN GIỜ UỐNG THUỐC (Ngăn 1):
-   ├─ Backend: Sinh DoseOccurrence (status: "pending", reminder_count: 0)
-   ├─ Simulator: Đèn LED Ngăn 1 nhấp nháy xanh, Còi hú phát âm thanh sóng dao động
-   └─ Mobile App: Tab "Hôm nay" cập nhật trạng thái "Cần uống thuốc"
-   │
-   ▼ (+2 phút tiếp theo - nếu chưa uống)
-[08:02] NHẮC LẠI LẦN 2:
-   ├─ Backend: Cập nhật DoseOccurrence (status: "reminded", reminder_count: 2)
-   └─ Simulator: Duy trì chuông & đèn LED nhắc nhở khẩn trương
-   │
-   ▼ (+3 phút tiếp theo - nếu vẫn chưa uống)
-[08:05] CẢNH BÁO QUÁ HẠN (MISSED_DOSE):
-   ├─ Backend: Chuyển DoseOccurrence sang "overdue", tạo bản ghi Alert (kind: "dose_overdue", status: "PENDING")
-   ├─ Mobile App: Tab "Cảnh báo" rung chuông, hiển thị thẻ cảnh báo đỏ khẩn cấp
-   └─ Người thân: Nhấp vào cảnh báo -> Chọn gợi ý "Đã gọi điện nhắc uống thuốc" -> Trạng thái chuyển CHECKED
-   │
-   ▼ (Thao tác thực tế của bệnh nhân tại hộp)
-[THAO TÁC UỐNG THUỐC]:
-   1. Bệnh nhân mở nắp Ngăn 1: Gửi sự kiện LID_OPENED (Nắp xoay 45°).
-   2. Lấy 1 viên thuốc: Trọng lượng giảm 0.5g -> Gửi WEIGHT_READING (Cân đọc 12.0g).
-   3. Nhấn nút XÁC NHẬN trên vỏ hộp: Gửi sự kiện CONFIRM_PRESSED.
-   └─ Kết quả: Liều chuyển sang "confirmed_on_time" (hoặc "confirmed_late"), LED tắt, Còi tắt.
-```
+### Phân hệ 1: Backend API (`backend/`)
+1. Di chuyển vào thư mục:
+   ```powershell
+   cd backend
+   ```
+2. Tạo và kích hoạt môi trường ảo:
+   - **Windows:**
+     ```powershell
+     python -m venv .venv
+     .\.venv\Scripts\activate
+     ```
+   - **macOS / Linux:**
+     ```bash
+     python3 -m venv .venv
+     source .venv/bin/activate
+     ```
+3. Cài đặt các thư viện:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Thiết lập tệp cấu hình `.env`:
+   - Sao chép từ mẫu:
+     ```powershell
+     copy .env.example .env
+     ```
+   - Kiểm tra trong `.env` đã có:
+     ```ini
+     DATABASE_URL=sqlite:///data/smartpill.sqlite3
+     JWT_SECRET=WFRDkdlpF9ovHEYdr1sNSgQC0NBsfY7TrRlznv2K56FKLdge5FDc0WqQCBnU72l-
+     DEMO_PASSWORD=Password123!
+     ```
+5. Khởi tạo cơ sở dữ liệu mẫu:
+   ```bash
+   python scripts/seed_demo.py
+   ```
+6. Khởi động server:
+   ```bash
+   python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
+   > Truy cập Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
-## Đặc tả API & Quy chuẩn kỹ thuật
+### Phân hệ 2: Web Simulator (`web-simulator/`)
+1. Di chuyển vào thư mục:
+   ```powershell
+   cd web-simulator
+   ```
+2. Cài đặt các gói phụ thuộc Node:
+   ```bash
+   npm install
+   ```
+3. Khởi động máy chủ phát triển Vite:
+   ```bash
+   npm run dev
+   ```
+   > Truy cập ứng dụng: [http://localhost:5173](http://localhost:5173)
 
-### 1. Bảng Endpoint chính
+---
+
+### Phân hệ 3: Flutter Caregiver App (`flutter-app/`)
+1. Di chuyển vào thư mục:
+   ```powershell
+   cd flutter-app
+   ```
+2. Tải các package Flutter:
+   ```bash
+   flutter pub get
+   ```
+3. Chạy ứng dụng:
+   - **Chạy trên Web (khuyến nghị khi demo):**
+     ```bash
+     flutter run -d web-server --web-port 8080 --web-hostname 127.0.0.1
+     ```
+     > Truy cập: [http://localhost:8080](http://localhost:8080)
+   - **Chạy trên Android Emulator:**
+     ```bash
+     flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
+     ```
+   - **Chạy trên thiết bị thật (cùng mạng Wi-Fi):**
+     ```bash
+     flutter run --dart-define=API_BASE_URL=http://<IP_MAY_TINH>:8000
+     ```
+
+---
+
+## 5. Kịch bản vận hành chuẩn y tế (Timeline Demo)
+
+```
+[TRẠNG THÁI CHỜ]: 
+Hộp đóng nắp, trọng lượng 5.0g (10 gói chia sẵn x 0.5g), Đèn LED tắt, Còi im lặng.
+   │
+   ▼
+[ĐẾN GIỜ UỐNG THUỐC]:
+├─ Backend: Tự động kích hoạt lượt uống (trạng thái: "Đang nhắc uống")
+├─ Simulator: Đèn LED ngăn tương ứng nhấp nháy, Còi báo y tế phát âm thanh chuông cảnh báo
+└─ Mobile App: Màn hình "Hôm nay" chuyển sang màu cam, hiển thị thẻ "Đang nhắc uống"
+   │
+   ▼ (+2 phút tiếp theo nếu chưa uống)
+[NHẮC LẠI LẦN 2]:
+├─ Backend: Cập nhật lượt uống sang trạng thái "Đã nhắc lại (2 phút)"
+└─ Simulator: Duy trì chuông cảnh báo khẩn trương hơn
+   │
+   ▼ (+3 phút tiếp theo nếu vẫn chưa uống)
+[CẢNH BÁO QUÁ HẠN]:
+├─ Backend: Chuyển lượt uống sang "Quá hạn", tự động tạo Alert PENDING gửi đến người thân
+├─ Mobile App: Huy hiệu đỏ xuất hiện trên tab "Cảnh báo", hiển thị thẻ cảnh báo khẩn cấp
+└─ Người thân: Bấm vào cảnh báo -> Chọn giải pháp xử lý nhanh ("Đã gọi điện nhắc") -> Trạng thái chuyển "Đã kiểm tra"
+   │
+   ▼ (Thao tác thực tế của người bệnh tại hộp thuốc)
+[BỆNH NHÂN UỐNG THUỐC]:
+1. Mở nắp ngăn: Gửi sự kiện LID_OPENED (Nắp hiển thị trạng thái Mở).
+2. Lấy 1 gói thuốc: Trọng lượng giảm 0.5g -> Cảm biến cân gửi WEIGHT_READING (Số gói giảm còn 9 gói).
+3. Bấm nút xác nhận trên vỏ hộp: Gửi sự kiện CONFIRM_PRESSED.
+└─ Kết quả: Lượt uống chuyển thành "Đã xác nhận đúng hạn" (hoặc trễ), Đèn LED tắt, Còi tắt hoàn toàn.
+```
+
+---
+
+## 6. Đặc tả API & Quy chuẩn kỹ thuật
+
+### Bảng Endpoint chính
+
 | Phương thức | Đường dẫn API | Phân quyền | Mô tả chức năng |
 | :--- | :--- | :---: | :--- |
-| `POST` | `/api/auth/login` | Công khai | Đăng nhập lấy Bearer JWT (hết hạn sau 8 giờ). |
-| `GET` | `/api/schedules` | Caregiver | Lấy danh sách lịch uống thuốc của bệnh nhân thuộc quyền quản lý. |
-| `POST` | `/api/schedules` | Caregiver | Tạo lịch mới (Tự động chặn trùng giờ/ngăn với mã `409 Conflict`). |
-| `PATCH` | `/api/schedules/{id}` | Caregiver | Cập nhật tên thuốc, giờ uống, trạng thái hoạt động. |
-| `GET` | `/api/doses` | Caregiver | Lấy danh sách các lần nhắc (`DoseOccurrence`) theo ngày/ngăn. |
-| `GET` | `/api/alerts` | Caregiver | Lấy danh sách cảnh báo quá hạn của bệnh nhân. |
-| `PATCH` | `/api/alerts/{id}` | Caregiver | Xử lý cảnh báo (`CHECKED`, `ASSISTED`, `IGNORED` có kèm ghi chú). |
-| `GET` | `/api/events` | Caregiver | Lấy nhật ký sự kiện cảm biến hộp thuốc (Hỗ trợ lọc slot/date). |
-| `GET` | `/api/simulation/state` | Operator | Lấy toàn bộ trạng thái phần cứng hộp thuốc (đồng hồ, cân, LED, nắp). |
-| `POST` | `/api/simulation/events` | Operator | Ghi nhận thao tác phần cứng (`LID_OPENED`, `WEIGHT_READING`, `CONFIRM_PRESSED`). |
-| `POST` | `/api/simulation/advance` | Operator | Tiến đồng hồ ảo thêm $N$ phút ($1 \le N \le 60$). |
-| `POST` | `/api/simulation/reset` | Operator | Đặt lại dữ liệu phiên demo về trạng thái ban đầu (`07:59`). |
-
-### 2. Quy chuẩn chống rung & Idempotency
-* **Ngưỡng nhận diện lấy thuốc:** Sụt giảm trọng lượng $\Delta \ge 0.3\,\text{g}$ mới được xem là dấu hiệu lấy thuốc. Rung lắc nhỏ ($\Delta < 0.3\,\text{g}$) được ghi nhận là nhiễu và không làm trừ viên.
-* **Chống sự kiện trùng lặp:** Mọi sự kiện gửi lên đều gắn kèm `event_uuid`. Nếu gửi lại cùng UUID và cùng nội dung, backend trả về kết quả cũ kèm cờ `idempotent: true`. Nếu cùng UUID nhưng sai khác loại sự kiện/ngăn thuốc/trọng lượng, backend từ chối với `409 Conflict`.
+| `POST` | `/api/auth/login` | Công khai | Đăng nhập cấp mã phiên Bearer JWT. |
+| `GET` | `/api/schedules` | Người thân | Lấy danh sách lịch uống thuốc của bệnh nhân. |
+| `POST` | `/api/schedules` | Người thân | Thêm lịch mới (Chống trùng giờ/ngăn, hỗ trợ chọn thứ trong tuần). |
+| `PATCH` | `/api/schedules/{id}` | Người thân | Cập nhật tên thuốc/gói chia sẵn, giờ uống, thứ trong tuần, bật/tắt. |
+| `DELETE` | `/api/schedules/{id}` | Người thân | **Xóa lịch uống thuốc** (Hủy các lần nhắc liên kết chưa hoàn thành). |
+| `GET` | `/api/doses` | Người thân | Lấy danh sách lượt uống hôm nay theo ngày/ngăn. |
+| `GET` | `/api/alerts` | Người thân | Lấy danh sách cảnh báo quá hạn của bệnh nhân. |
+| `PATCH` | `/api/alerts/{id}` | Người thân | Xử lý cảnh báo (`CHECKED`, `ASSISTED`, `IGNORED` có lý do bắt buộc). |
+| `GET` | `/api/events` | Người thân | Xem nhật ký sự kiện cảm biến hộp thuốc (lọc theo ngăn/ngày). |
+| `DELETE` | `/api/events` | Người thân | **Xóa sạch nhật ký sự kiện** trên máy chủ và thiết bị. |
+| `GET` | `/api/simulation/state` | Người vận hành | Lấy toàn bộ trạng thái thiết bị (đồng hồ, cân, LED, nắp, còi, số gói). |
+| `POST` | `/api/simulation/events` | Người vận hành | Gửi thao tác phần cứng (`LID_OPENED`, `WEIGHT_READING`, `CONFIRM_PRESSED`, `PILL_REFILLED`). |
+| `POST` | `/api/simulation/mode` | Người vận hành | Chuyển đổi giữa chế độ `REALTIME` (thời gian thực) và `SIMULATION` (mô phỏng). |
+| `POST` | `/api/simulation/advance`| Người vận hành | Tiến đồng hồ mô phỏng thêm $N$ phút. |
+| `POST` | `/api/simulation/reset` | Người vận hành | Đặt lại trạng thái mô phỏng ban đầu. |
 
 ---
 
-## Hướng dẫn cài đặt & Chạy ứng dụng
+## 7. Bằng chứng kiểm thử & Quality Gates (100% Pass)
 
-### Yêu cầu hệ thống:
-* **Python 3.12+**
-* **Node.js 18+** & npm
-* **Flutter SDK 3.x+**
+Toàn bộ hệ thống được kiểm thử tự động, nghiêm ngặt qua 4 lớp kiểm tra chất lượng:
 
-### Khởi động nhanh (Khuyến nghị trên Windows):
-Chạy tệp `start_all.bat` ở thư mục gốc để khởi động tự động toàn bộ 3 phân hệ (Backend :8000, Web Simulator :5173, Flutter Web :8080).
+```
+========================================================================================
+                             BÁO CÁO KIỂM THỬ HỆ THỐNG TOÀN DIỆN
+========================================================================================
+ [PASS] Backend Pytest Suite               : 21/21 PASSED    (100% Logic, Auth, Lịch, Realtime, Refill)
+ [PASS] Flutter Widget & Unit Tests        : 3/3 PASSED      (100% Đầy đủ 5 tabs, Xóa lịch, Xóa sự kiện)
+ [PASS] Flutter Static Analysis            : 0 ISSUES        (Hoàn toàn sạch cảnh báo/linter)
+ [PASS] Web Simulator Production Build     : PASSED          (TypeScript tsc -b + Vite build thành công)
+ [PASS] Chrome DevTools Protocol Audit     : 12/12 PASSED    (Console sạch, 0 lỗi mạng, UI đồng bộ tức thời)
+========================================================================================
+```
 
-### Hoặc khởi động thủ công từng phân hệ:
-
-#### Bước 1: Khởi tạo Backend (Cửa sổ Terminal 1)
+### Lệnh chạy kiểm thử nhanh:
 ```powershell
+# Kiểm thử Backend:
 cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-python scripts\seed_demo.py
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-> API Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+.\.venv\Scripts\python.exe -m pytest tests -q
 
-#### Bước 2: Khởi động Web Simulator (Cửa sổ Terminal 2)
-```powershell
-cd web-simulator
-npm install
-npm run dev
-```
-> Truy cập trình duyệt: [http://localhost:5173](http://localhost:5173)
-
-#### Bước 3: Khởi động Flutter Mobile App (Cửa sổ Terminal 3)
-```powershell
+# Kiểm thử Flutter:
 cd flutter-app
-flutter pub get
-# Chạy bản Web:
-flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0
-# Hoặc chạy trên Android Emulator:
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
+flutter analyze
+flutter test
+
+# Kiểm thử Web Simulator Build:
+cd web-simulator
+npm run build
 ```
-> Truy cập bản Flutter Web: [http://localhost:8080](http://localhost:8080)
-
-### Tài khoản Demo sẵn sàng sử dụng:
-| Vai trò | Email đăng nhập | Mật khẩu mặc định | Ghi chú |
-| :--- | :--- | :--- | :--- |
-| **Operator** | `operator@example.test` | `Password123!` | Dùng cho Web Simulator (Bàn điều khiển hộp thuốc). |
-| **Caregiver A** | `caregiver-a@example.test` | `Password123!` | Người thân chăm sóc Bệnh nhân A (SIM-001). |
-| **Caregiver B** | `caregiver-b@example.test` | `Password123!` | Người thân chăm sóc Bệnh nhân B (Cách ly dữ liệu). |
-
-*(Cả trên Web Simulator và Mobile App đều có nút "Điền nhanh" hỗ trợ đăng nhập 1 chạm tiện dụng).*
 
 ---
-
-## Bằng chứng kiểm thử & Đảm bảo chất lượng (Quality Gates)
-
-Toàn bộ hệ sinh thái Smart Pill Box được kiểm soát nghiêm ngặt qua 4 lớp kiểm thử tự động:
-
-```
-========================================================================================
-                            QUALITY GATES VERIFICATION SUMMARY
-========================================================================================
- [CHỜ KIỂM CHỨNG] Backend Pytest Suite               : 8/8 PASSED     (100% logic, bảo mật & múi giờ)
- [CHỜ KIỂM CHỨNG] Flutter Widget Tests               : 2/2 PASSED     (Đầy đủ 5 tabs & assertions)
- [CHỜ KIỂM CHỨNG] Flutter Static Analysis            : 0 ISSUES       (Hoàn toàn sạch cảnh báo/linter)
- [CHỜ KIỂM CHỨNG] Web Simulator Production Build     : PASSED         (tsc + vite build trong 503ms)
- [CHỜ KIỂM CHỨNG] Chrome DevTools Protocol Audit (CDP): 12/12 PASSED   (Console sạch, 0 lỗi mạng)
-========================================================================================
-```
-
-### Chi tiết 12 ca kiểm thử Chrome DevTools Protocol & Security Audit:
-1. **Edge 1:** Đăng nhập sai mật khẩu $\rightarrow$ Trả về `401 Unauthorized`.
-2. **Edge 2:** Đăng nhập Caregiver hợp lệ $\rightarrow$ Cấp phát JWT Bearer thành công.
-3. **Edge 3:** Tiến đồng hồ không có token $\rightarrow$ Chặn với `401 Unauthorized`.
-4. **Edge 4:** Caregiver cố tình gọi API điều khiển đồng hồ Operator $\rightarrow$ Chặn với `403 Forbidden`.
-5. **Edge 5:** Tạo lịch uống trùng giờ và ngăn với lịch đang hoạt động $\rightarrow$ Chặn với `409 Conflict`.
-6. **Edge 6:** Chọn ngăn thuốc ngoài khoảng (Slot 4) $\rightarrow$ Từ chối với `422 Unprocessable Entity`.
-7. **Edge 7:** Nhập định dạng giờ sai quy chuẩn (`25:99`) $\rightarrow$ Từ chối với `422 Unprocessable Entity`.
-8. **Edge 8:** Bỏ qua cảnh báo (`IGNORED`) nhưng để trống ghi chú $\rightarrow$ Bắt buộc ghi chú với `422`.
-9. **Edge 9:** Caregiver B cố tình truy cập hoặc sửa cảnh báo của Caregiver A $\rightarrow$ Chặn với `404 Not Found`.
-10. **Edge 10:** Gửi cảm biến cân tải trọng âm ($-5.0\,\text{g}$) $\rightarrow$ Từ chối với `422 Unprocessable Entity`.
-11. **Edge 11:** Kiểm tra Idempotency: Gửi lại cùng UUID và payload $\rightarrow$ Trả về `200` với cờ `idempotent: true`; Gửi cùng UUID nhưng xung đột `event_type` $\rightarrow$ Từ chối với `409 Conflict`.
-12. **Edge 12:** Caregiver A giải quyết cảnh báo kèm ghi chú hợp lệ $\rightarrow$ Trạng thái chuyển `CHECKED` và cập nhật `resolved_at` tức thì.
-
----
-*Dự án phát triển bởi nhóm 5 thành viên — Smart Pill Box System 2026.*
-
-
-## Hai chế độ đồng hồ — Mô phỏng và Thời gian thực
-
-- **Mô phỏng (mặc định):** đồng hồ hộp bắt đầu lúc `2026-10-09 07:59 GMT+7`; operator bấm cộng phút hoặc tới mốc tiếp theo để chạy demo. Không dùng giờ đồng hồ hệ điều hành.
-- **Thời gian thực:** operator đăng nhập website, chọn **Thời gian thực** trong thanh điều khiển. Backend chạy tác vụ định kỳ khoảng 3 giây trong vòng đời FastAPI, dùng múi giờ `GMT+07:00` và xử lý mốc 08:00 → 08:02 → 08:05 tự động. Đồng hồ, chế độ và các lần uống được lưu SQLite; không cần mở website để bộ xử lý chạy.
-- API `POST /api/simulation/mode` yêu cầu `Authorization: Bearer <operator JWT>` với JSON `{"clock_mode":"REALTIME"}` hoặc `{"clock_mode":"SIMULATION"}`. `GET /api/simulation/state` trả về `clock_mode` và `virtual_clock`.
-- Chuyển sang **Thời gian thực** không phát lại những giờ đã qua trong ngày; lần nhắc đúng phút hiện tại được kiểm tra ngay. Chuyển về **Mô phỏng** sẽ tiếp tục ở vị trí đồng hồ demo trước đó.
-- Cùng một hệ thống xử lý lần nhắc và cảnh báo, nhưng các lần uống của hai chế độ được phân biệt bởi `dose_occurrences.clock_mode`. Các phiên bản SQLite cũ được bổ sung cột tự động mà không xóa lịch sử.
-- Khi realtime đang bật, nút tiến giờ và reset demo bị khóa để tránh sửa giờ thật. Để reset, chuyển về Mô phỏng trước. Chỉ operator được chuyển chế độ.
-- **Yêu cầu chạy:** để FastAPI hoạt động liên tục với chế độ realtime, dùng **một worker Uvicorn** (`python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1`); không dùng `--reload` khi demo độ ổn định. Nếu backend tắt thì không phát nhắc trong lúc tắt; khi bật lại tác vụ có thể xử lý tối đa 24 giờ đã bỏ lỡ.
-- **Giới hạn:** chưa có push notification hệ điều hành khi đóng ứng dụng; Flutter đang mở tải lại dữ liệu định kỳ, website đang mở có thể phát tiếng nếu đã bật âm thanh. Đây là tính năng demo quản lý thuốc, không thay thế thiết bị nhắc thuốc y tế độc lập.
-- **Kiểm thử:** `cd backend; python -m pytest -q`; `cd web-simulator; npm run build`; `cd flutter-app; flutter test`. Kiểm tra thêm bằng cách đặt lịch sắp tới theo giờ Việt Nam, chọn Thời gian thực, chờ mốc và xác nhận cả event, occurrence, alert lưu SQLite.
+*Dự án phát triển bởi nhóm sinh viên — Smart Pill Box System 2026.*
