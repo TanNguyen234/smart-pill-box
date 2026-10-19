@@ -105,6 +105,68 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }).toList();
   }
 
+  Future<void> _confirmClearHistory() async {
+    final api = widget.api;
+    if (api == null || api.token == null) return;
+
+    final targetText = _selectedSlot != null
+        ? 'của Ngăn $_selectedSlot'
+        : 'toàn bộ các ngăn';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_sweep_outlined, color: Color(0xFFDC2626)),
+            SizedBox(width: 8),
+            Text('Xóa lịch sử sự kiện'),
+          ],
+        ),
+        content: Text(
+          'Bạn có chắc chắn muốn xóa nhật ký lịch sử sự kiện $targetText không?\n'
+          'Thao tác này sẽ làm sạch các bản ghi trên máy chủ và thiết bị.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+            child: const Text('Xác nhận xóa'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      final count = await api.clearEvents(slot: _selectedSlot);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã xóa thành công $count bản ghi sự kiện.'),
+          backgroundColor: const Color(0xFF059669),
+        ),
+      );
+      await _loadEvents();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi khi xóa lịch sử: $e'),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+      setState(() => _loading = false);
+    }
+  }
+
   String _eventTitle(String eventType) {
     switch (eventType) {
       case 'LID_OPENED':
@@ -113,7 +175,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return 'Đóng nắp ngăn thuốc';
       case 'PILL_REMOVED':
       case 'PILL_DISPENSED':
-        return 'Lấy viên thuốc khỏi ngăn';
+        return 'Lấy gói thuốc khỏi ngăn';
       case 'WEIGHT_READING':
       case 'WEIGHT_SAMPLE':
       case 'WEIGHT_CHANGED':
@@ -129,10 +191,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case 'CLOCK_ADVANCED':
         return 'Tiến đồng hồ mô phỏng';
       case 'SIMULATION_RESET':
-        return 'Đặt lại trạng thái demo';
+        return 'Đặt lại trạng thái mô phỏng';
       case 'PILL_REFILLED':
       case 'REFILL':
-        return 'Nạp thêm thuốc vào ngăn';
+        return 'Nạp thêm gói thuốc vào ngăn';
       default:
         return eventType;
     }
@@ -268,16 +330,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     ],
                   ),
-                  IconButton.filledTonal(
-                    onPressed: _loading ? null : _loadEvents,
-                    tooltip: 'Làm mới lịch sử',
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh_rounded, size: 20),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: _loading ? null : _loadEvents,
+                        tooltip: 'Làm mới lịch sử',
+                        icon: _loading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded, size: 20),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        onPressed:
+                            (_loading || _events.isEmpty) ? null : _confirmClearHistory,
+                        tooltip: 'Xóa lịch sử sự kiện',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFFEE2E2),
+                          foregroundColor: const Color(0xFFDC2626),
+                        ),
+                        icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -425,7 +503,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Các thao tác mở nắp, lấy thuốc và bấm xác nhận trên hộp sẽ xuất hiện tại đây theo thời gian thực.',
+                                  'Các thao tác mở nắp, lấy gói thuốc và bấm xác nhận trên hộp sẽ xuất hiện tại đây theo thời gian thực.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 13,
@@ -660,7 +738,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                             const SizedBox(
                                                                 width: 4),
                                                             Text(
-                                                              '+$pillsAdded viên',
+                                                              '+$pillsAdded gói',
                                                               style:
                                                                   const TextStyle(
                                                                 fontSize: 11,

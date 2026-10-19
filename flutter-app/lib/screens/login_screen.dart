@@ -90,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Demo: caregiver-a@example.test • Pass: Password123!',
+                            'Tài khoản mẫu: caregiver-a@example.test • Mật khẩu: Password123!',
                             style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w500),
                           ),
                         ),
@@ -119,7 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  Text('Dữ liệu demo · Token chỉ lưu trong phiên mở ứng dụng', textAlign: TextAlign.center, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
+                  Text('Dữ liệu thử nghiệm · Mã phiên chỉ lưu trong lần mở ứng dụng', textAlign: TextAlign.center, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
                 ],
               ),
             ),

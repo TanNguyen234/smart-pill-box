@@ -784,7 +784,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      widget.account.role,
+                      widget.account.role.toLowerCase() == 'caregiver'
+                          ? 'Người thân'
+                          : widget.account.role,
                       style: const TextStyle(color: Color(0xFF0F766E), fontWeight: FontWeight.w700, fontSize: 12),
                     ),
                   ),
@@ -902,8 +904,8 @@ class _EditScheduleDialogState extends State<_EditScheduleDialog> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Tên thuốc'),
-                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên thuốc' : null,
+                decoration: const InputDecoration(labelText: 'Tên thuốc / Gói chia sẵn'),
+                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên thuốc / gói chia sẵn' : null,
               ),
               const SizedBox(height: 14),
               const Text('Ngăn thuốc:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -1084,8 +1086,8 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Tên thuốc mẫu'),
-                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên thuốc' : null,
+                decoration: const InputDecoration(labelText: 'Tên thuốc / Gói chia sẵn'),
+                validator: (val) => val == null || val.trim().isEmpty ? 'Nhập tên thuốc / gói chia sẵn' : null,
               ),
               const SizedBox(height: 14),
               const Text('Ngăn thuốc:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),

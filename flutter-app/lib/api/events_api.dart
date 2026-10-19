@@ -18,4 +18,14 @@ extension EventsApi on SmartPillApi {
         .map((item) => DeviceEventItem.fromJson(item as Map<String, dynamic>))
         .toList();
   }
+
+  Future<int> clearEvents({int? patientId, int? slot}) async {
+    final query = <String, String>{
+      if (patientId != null) 'patient_id': '$patientId',
+      if (slot != null) 'slot': '$slot',
+    };
+    final res = await _request('/api/events',
+        method: 'DELETE', queryParameters: query) as Map<String, dynamic>;
+    return (res['deleted_count'] as num?)?.toInt() ?? 0;
+  }
 }
